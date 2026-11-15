@@ -104,6 +104,9 @@
 | `FOUL` | foul_kind（P/T/U/D/C/B）＋ ft_awarded | — |
 | `TIMEOUT` | side単位（roster_idはnull） | — |
 | `PERIOD_END` | Q終了の区切り | — |
+| `L2M` | 第4Q「残り2分」トグルをONにした位置のマーカー（OFFでvoid）。TO上限の計算に使う | — |
+
+※ `PERIOD_END` と `L2M` はチームに属さないため `side` は null。
 
 **ドメイン関数（純粋関数・単体テスト必須）**：`computeScore` / `computeTeamFouls(period)` / `computePlayerFouls` / `checkDisqualification` / `remainingTimeouts` / `buildRunningScore` / `buildBoxScore`
 

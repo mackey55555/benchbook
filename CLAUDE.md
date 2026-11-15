@@ -5,9 +5,15 @@
 
 ## 進め方
 
-- `docs/SPEC.md` 8章のチェックポイント（CP0〜CP7）単位で進める。1セッション＝1CP＝1PR
-- 各CPの完了条件を満たしたら、そこで止めてレビューを依頼する。次のCPに勝手に進まない
-- CPの途中で仕様の穴を見つけたら、実装を止めて質問する（推測で埋めない）
+- MVP（CP0〜CP7）は一通り実装済み。以降は実機で画面を見ながら詳細を詰める進め方（2026-11-15〜）
+- 仕様の穴や未決事項は妥当な既定値で実装を進め、置いた前提をPRの説明に一覧で書く
+- 実機ビルドやApple/EASのログインなど、人にしかできない作業だけ手順にして渡す
+
+## コマンド
+
+- `npm run typecheck` / `npm run lint` / `npm test`
+- スキーマ変更後：`npx drizzle-kit generate --name <名前>`（`drizzle/` に追加。既存のマイグレーションは書き換えない）
+- Androidエミュレータでの動作確認：`BENCHBOOK_ANDROID=1 npx expo run:android`（配布対象はiPhoneのみ）
 
 ## アーキテクチャの原則
 
@@ -22,7 +28,8 @@
 
 - Expo（最新SDK）+ expo-router + TypeScript（strict）
 - expo-sqlite + Drizzle ORM（マイグレーションは前方互換のみ）
-- expo-haptics / expo-keep-awake / expo-screen-orientation / expo-print / expo-sharing
+- expo-haptics / expo-keep-awake / expo-screen-orientation / expo-print / expo-sharing / expo-file-system
+- react-native-webview（ランニングスコア表示）/ react-native-view-shot（画像共有）
 - EAS Build（`preview` プロファイル、iOS ad hoc）/ EAS Update（channel `preview`、runtimeVersion fingerprint）
 - バンドルID：`jp.arti-lab.benchbook`
 
