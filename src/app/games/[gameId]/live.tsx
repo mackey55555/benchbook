@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '@/db/client';
 import {
   addEvent,
+  addRosterEntry,
   endPeriod,
   isPeriodEnded,
   setLastTwoMinutes,
@@ -67,6 +68,8 @@ export default function LiveScreen() {
   const [selected, setSelected] = useState<Selection | null>(null);
   const [foulSheet, setFoulSheet] = useState<{ kind: FoulKind; ft: number } | null>(null);
   const [logOpen, setLogOpen] = useState(false);
+  // 試合中の背番号追加（開始時に相手の番号が全員分かっていない場合のため）
+  const [adding, setAdding] = useState<{ side: Side; number: string } | null>(null);
 
   const period = bundle?.game.currentPeriod ?? 1;
   const state = useMemo(
@@ -182,6 +185,18 @@ export default function LiveScreen() {
       { text: 'キャンセル', style: 'cancel' },
     ]);
 
+  // 追加した選手はそのまま選択状態にして、続けてアクションを押せるようにする
+  const addNumber = () => {
+    if (!adding) return;
+    let added: { id: string } | undefined;
+    const ok = attempt(() => (added = addRosterEntry(db, gameId, adding.side, { number: adding.number })));
+    reload();
+    if (!ok || !added) return;
+    setSelected({ side: adding.side, rosterId: added.id });
+    setAdding(null);
+    void Haptics.selectionAsync();
+  };
+
   const select = (side: Side, rosterId: string) => {
     void Haptics.selectionAsync();
     setSelected((cur) => (cur?.side === side && cur.rosterId === rosterId ? null : { side, rosterId }));
@@ -261,6 +276,19 @@ export default function LiveScreen() {
           )
         )}
       </Pressable>,
+      ...(team.players.length < RULES.maxRosterSize
+        ? [
+            <Pressable
+              key="add"
+              accessibilityRole="button"
+              accessibilityLabel={`${side} 背番号を追加`}
+              onPress={() => setAdding({ side, number: '' })}
+              style={[styles.cell, styles.addCell]}
+            >
+              <Text style={styles.addText}>＋番号</Text>
+            </Pressable>,
+          ]
+        : []),
     ];
     const rows = Array.from({ length: GRID_ROWS }, (_, r) =>
       cells.slice(r * GRID_COLUMNS, (r + 1) * GRID_COLUMNS),
@@ -461,6 +489,48 @@ export default function LiveScreen() {
         </Pressable>
       </Modal>
 
+      <Modal
+        visible={adding !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAdding(null)}
+        supportedOrientations={['landscape', 'portrait']}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setAdding(null)}>
+          <Pressable style={styles.padSheet} onPress={() => undefined}>
+            <Row>
+              <Text style={[styles.sheetTitle, styles.flex, adding && { color: sideColor(adding.side) }]} numberOfLines={1}>
+                {adding?.side} に背番号を追加
+              </Text>
+              <Text style={styles.padDisplay}>{adding?.number || '–'}</Text>
+            </Row>
+            <View style={styles.padGrid}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'].map((k) => (
+                <Pressable
+                  key={k}
+                  accessibilityRole="button"
+                  accessibilityLabel={k === '⌫' ? '1文字消す' : k}
+                  onPress={() =>
+                    setAdding((a) =>
+                      a
+                        ? { ...a, number: k === '⌫' ? a.number.slice(0, -1) : (a.number + k).slice(0, 2) }
+                        : a,
+                    )
+                  }
+                  style={({ pressed }) => [styles.padKey, pressed && styles.pressed]}
+                >
+                  <Text style={styles.padKeyText}>{k}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Row>
+              <Button title="キャンセル" variant="secondary" onPress={() => setAdding(null)} style={styles.flex} />
+              <Button title="追加" disabled={!adding?.number} onPress={addNumber} style={styles.flex} />
+            </Row>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <EventLogSheet visible={logOpen} bundle={bundle} onClose={() => setLogOpen(false)} onChanged={reload} />
     </SafeAreaView>
   );
@@ -565,4 +635,27 @@ const styles = StyleSheet.create({
   sheet: { width: 380, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 16, gap: 12 },
   sheetTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   sheetLabel: { width: 44, fontSize: 14, color: colors.sub },
+  addCell: { backgroundColor: 'transparent', borderColor: colors.line, borderStyle: 'dashed' },
+  addText: { fontSize: 13, fontWeight: '700', color: colors.sub },
+  padSheet: { width: 440, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 14, gap: 10 },
+  padDisplay: {
+    minWidth: 64,
+    textAlign: 'center',
+    fontSize: 28,
+    fontWeight: '900',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  padGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  padKey: {
+    width: 62,
+    height: 52,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  padKeyText: { fontSize: 22, fontWeight: '700', color: colors.text },
 });
