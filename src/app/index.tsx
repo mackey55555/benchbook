@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 // OTA反映確認用の文言。`eas update` の前にここを書き換えると、反映されたか目で確認できる。
-const OTA_CHECK_LABEL = 'CP0: 初回ビルド';
+const OTA_CHECK_LABEL = 'CP0: OTA 1回目';
 
 // 開発ビルド・Expo Go では expo-updates が無効で、確認APIは reject される
 const canCheckUpdate = Updates.isEnabled && !__DEV__;
