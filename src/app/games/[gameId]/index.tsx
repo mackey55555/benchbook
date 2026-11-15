@@ -257,7 +257,7 @@ export default function GameDetailScreen() {
     ]);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
       <Stack.Screen options={{ title: game.date }} />
       <View style={styles.header}>
         <Text style={styles.meta}>

@@ -27,7 +27,7 @@ export default function TeamsScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       {teams.map(({ team, count }) => (
         <Pressable
           key={team.id}

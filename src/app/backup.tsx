@@ -45,7 +45,7 @@ export default function BackupScreen() {
     });
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
       <SectionTitle>書き出し</SectionTitle>
       <Card>
         <Text style={styles.body}>

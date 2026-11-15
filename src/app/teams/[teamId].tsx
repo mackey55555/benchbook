@@ -56,7 +56,7 @@ export default function TeamScreen() {
     ]);
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{ title: team.isOwn ? '自チーム' : '相手チーム' }} />
       <SectionTitle>チーム名</SectionTitle>
       <CommitInput value={team.name} onCommit={(v) => run(() => renameTeam(db, teamId, v))} />
