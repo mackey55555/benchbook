@@ -790,3 +790,26 @@ export function isPeriodEnded(events: readonly GameEvent[], period: number): boo
 export function otherSide(side: Side): Side {
   return other(side);
 }
+
+/** 誤って終了した試合を再開する。最後のQ終了を取り消し、そのQの入力に戻る */
+export function reopenGame(db: Db, gameId: string): void {
+  db.transaction((tx) => {
+    const game = tx.select().from(games).where(eq(games.id, gameId)).get();
+    if (!game || game.status !== 'finished') return;
+    const live = tx.select().from(games).where(eq(games.status, 'live')).get();
+    if (live) throw new RepoError('進行中の試合があります。先にその試合を終了してください');
+    const markers = activeMarkers(tx, gameId, 'PERIOD_END', game.currentPeriod);
+    if (markers.length > 0) {
+      tx.update(gameEvents)
+        .set({ voidedAt: Date.now() })
+        .where(
+          inArray(
+            gameEvents.id,
+            markers.map((m) => m.id),
+          ),
+        )
+        .run();
+    }
+    tx.update(games).set({ status: 'live', finishedAt: null }).where(eq(games.id, gameId)).run();
+  });
+}

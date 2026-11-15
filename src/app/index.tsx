@@ -1,120 +1,203 @@
 import Constants from 'expo-constants';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Updates from 'expo-updates';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-// OTA反映確認用の文言。`eas update` の前にここを書き換えると、反映されたか目で確認できる。
-const OTA_CHECK_LABEL = 'CP0: OTA 1回目';
+import { db } from '@/db/client';
+import { createGame, getLiveGame, isPeriodEnded, listEvents, listGames } from '@/db/repo';
+import type { Game } from '@/db/schema';
+import { periodLabel } from '@/domain/rules';
+import { Button, Card, Row, SectionTitle } from '@/ui/components';
+import { colors } from '@/ui/theme';
+import { useRefresh } from '@/ui/useGame';
 
 // 開発ビルド・Expo Go では expo-updates が無効で、確認APIは reject される
 const canCheckUpdate = Updates.isEnabled && !__DEV__;
 
+// 起動直後に一度だけ、進行中の試合へ直接戻る（SPEC 7章）
+let resumedOnLaunch = false;
+// OTAの自動確認は起動ごとに一度だけ
+let checkedUpdateOnLaunch = false;
+
+const STATUS_LABEL: Record<Game['status'], string> = { prep: '準備中', live: '進行中', finished: '終了' };
+
 export default function HomeScreen() {
+  const router = useRouter();
+  const [version] = useRefresh();
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
 
-  const rows: [label: string, value: string][] = [
-    ['アプリのバージョン', Constants.expoConfig?.version ?? '-'],
-    ['OTA updateId', Updates.updateId ?? '-'],
-    ['起動元', Updates.isEmbeddedLaunch ? 'ビルド同梱' : 'OTA'],
-    ['channel', Updates.channel ?? '-'],
-    ['runtimeVersion', Updates.runtimeVersion ?? '-'],
-    ['update作成日時', Updates.createdAt?.toLocaleString('ja-JP') ?? '-'],
-  ];
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- version で再読み込みする
+  const games = useMemo(() => listGames(db), [version]);
+  const live = games.find((g) => g.game.status === 'live');
 
-  // checkAutomatically: NEVER のため、更新は手動でのみ確認・取得する。
-  // 取得した更新は次回の起動時に適用する（SPEC 7章）。
-  const checkForUpdate = async () => {
+  const openGame = useCallback(
+    (game: Game, replace = false) => {
+      const go = replace ? router.replace : router.push;
+      if (game.status === 'prep') go(`/games/${game.id}/prep`);
+      else if (game.status === 'finished') go(`/games/${game.id}`);
+      else if (isPeriodEnded(listEvents(db, game.id), game.currentPeriod)) go(`/games/${game.id}/check`);
+      else go(`/games/${game.id}/live`);
+    },
+    [router],
+  );
+
+  // 取得した更新は次回の起動時に適用する。進行中の試合があるときは確認しない（SPEC 7章）
+  const checkForUpdate = useCallback(async (manual: boolean) => {
+    if (!canCheckUpdate) return;
     setBusy(true);
-    setStatus('更新を確認中…');
+    if (manual) setUpdateStatus('更新を確認中…');
     try {
       const check = await Updates.checkForUpdateAsync();
       if (!check.isAvailable) {
-        setStatus('最新です（新しい更新はありません）');
+        if (manual) setUpdateStatus('最新です');
         return;
       }
-      setStatus('更新をダウンロード中…');
+      setUpdateStatus('更新をダウンロード中…');
       await Updates.fetchUpdateAsync();
-      setStatus('更新を取得しました。アプリを終了して再起動すると適用されます');
+      setUpdateStatus('更新を取得しました。アプリを終了して再起動すると適用されます');
     } catch (e) {
-      setStatus(`更新の確認に失敗しました: ${e instanceof Error ? e.message : String(e)}`);
+      // オフラインでも全機能が動くこと。自動確認の失敗は黙って無視する
+      if (manual) setUpdateStatus(`確認できませんでした: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const current = getLiveGame(db);
+      if (current && !resumedOnLaunch) {
+        resumedOnLaunch = true;
+        openGame(current);
+        return;
+      }
+      resumedOnLaunch = true;
+      if (!current && !checkedUpdateOnLaunch) {
+        checkedUpdateOnLaunch = true;
+        void checkForUpdate(false);
+      }
+    }, [openGame, checkForUpdate]),
+  );
+
+  const newGame = () => {
+    const game = createGame(db);
+    router.push(`/games/${game.id}/prep`);
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>{OTA_CHECK_LABEL}</Text>
-      {rows.map(([label, value]) => (
-        <View key={label} style={styles.row}>
-          <Text style={styles.rowLabel}>{label}</Text>
-          <Text style={styles.rowValue} selectable>
-            {value}
+    <ScrollView contentContainerStyle={styles.container}>
+      {live && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="進行中の試合を再開"
+          onPress={() => openGame(live.game)}
+          style={({ pressed }) => [styles.resume, pressed && { opacity: 0.8 }]}
+        >
+          <Text style={styles.resumeLabel}>進行中の試合を再開</Text>
+          <Text style={styles.resumeTeams} numberOfLines={1}>
+            {live.game.teamAName || 'A'} vs {live.game.teamBName || 'B'}
           </Text>
-        </View>
+          <Text style={styles.resumeScore}>
+            {live.score.A} - {live.score.B}　{periodLabel(live.game.currentPeriod)}
+          </Text>
+        </Pressable>
+      )}
+
+      <Button title="＋ 新規試合" onPress={newGame} />
+      <Row>
+        <Button title="チーム管理" variant="secondary" onPress={() => router.push('/teams')} style={styles.flex} />
+        <Button title="バックアップ" variant="secondary" onPress={() => router.push('/backup')} style={styles.flex} />
+      </Row>
+
+      <SectionTitle>試合一覧</SectionTitle>
+      {games.length === 0 && <Text style={styles.empty}>まだ試合がありません</Text>}
+      {games.map(({ game, score }) => (
+        <Pressable
+          key={game.id}
+          accessibilityRole="button"
+          onPress={() => openGame(game)}
+          style={({ pressed }) => [styles.gameRow, pressed && { opacity: 0.6 }]}
+        >
+          <View style={styles.flex}>
+            <Text style={styles.gameDate}>
+              {game.date}
+              {game.leagueName ? `　${game.leagueName}` : ''}
+            </Text>
+            <Text style={styles.gameTeams} numberOfLines={1}>
+              {game.teamAName || 'A'} vs {game.teamBName || 'B'}
+            </Text>
+          </View>
+          {game.status !== 'prep' && (
+            <Text style={styles.gameScore}>
+              {score.A} - {score.B}
+            </Text>
+          )}
+          <Text style={[styles.status, game.status === 'live' && styles.statusLive]}>
+            {STATUS_LABEL[game.status]}
+          </Text>
+        </Pressable>
       ))}
-      <Pressable
-        accessibilityRole="button"
-        disabled={!canCheckUpdate || busy}
-        onPress={checkForUpdate}
-        style={({ pressed }) => [
-          styles.button,
-          (!canCheckUpdate || busy) && styles.buttonDisabled,
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={styles.buttonText}>更新を確認</Text>
-      </Pressable>
-      <Text style={styles.status}>
-        {canCheckUpdate ? status : '開発ビルドではOTAの確認はできません'}
-      </Text>
-    </View>
+
+      <SectionTitle>アプリ情報</SectionTitle>
+      <Card>
+        <Text style={styles.info}>バージョン {Constants.expoConfig?.version ?? '-'}</Text>
+        <Text style={styles.info} selectable>
+          OTA {Updates.isEmbeddedLaunch ? 'ビルド同梱' : '適用済み'}　{Updates.updateId ?? '-'}
+        </Text>
+        <Text style={styles.info}>
+          channel {Updates.channel ?? '-'}　{Updates.createdAt?.toLocaleString('ja-JP') ?? ''}
+        </Text>
+        {live ? (
+          <Text style={styles.info}>試合中は更新を確認しません</Text>
+        ) : (
+          <Button
+            title="更新を確認"
+            variant="secondary"
+            small
+            disabled={!canCheckUpdate || busy}
+            onPress={() => void checkForUpdate(true)}
+          />
+        )}
+        {updateStatus && <Text style={styles.info}>{updateStatus}</Text>}
+      </Card>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    gap: 16,
-    backgroundColor: '#fff',
-  },
-  label: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  row: {
-    gap: 4,
-  },
-  rowLabel: {
-    fontSize: 13,
-    color: '#666',
-  },
-  rowValue: {
-    fontSize: 15,
-    fontVariant: ['tabular-nums'],
-  },
-  button: {
-    minHeight: 56,
-    borderRadius: 12,
+  container: { padding: 16, gap: 12, paddingBottom: 40 },
+  flex: { flex: 1 },
+  resume: { backgroundColor: colors.primary, borderRadius: 14, padding: 18, gap: 4 },
+  resumeLabel: { color: colors.primaryText, fontSize: 14, fontWeight: '700' },
+  resumeTeams: { color: colors.primaryText, fontSize: 18, fontWeight: '600' },
+  resumeScore: { color: colors.primaryText, fontSize: 34, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  empty: { color: colors.sub, fontSize: 14, paddingVertical: 12 },
+  gameRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1f6feb',
+    gap: 10,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 14,
+    minHeight: 56,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
   },
-  buttonDisabled: {
-    backgroundColor: '#b0b8c4',
-  },
-  buttonPressed: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '600',
-  },
+  gameDate: { fontSize: 12, color: colors.sub },
+  gameTeams: { fontSize: 16, fontWeight: '600', color: colors.text },
+  gameScore: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.text },
   status: {
-    fontSize: 14,
-    color: '#333',
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.sub,
+    backgroundColor: colors.disabledBg,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
+  statusLive: { color: colors.ok, backgroundColor: colors.okBg },
+  info: { fontSize: 12, color: colors.sub },
 });

@@ -6,12 +6,17 @@ import type { ExpoConfig } from 'expo/config';
  */
 const EAS_PROJECT_ID = '2642f196-97ed-456b-a675-797478cb9ea3';
 
+// 手元のAndroidエミュレータで動作確認するときだけ `BENCHBOOK_ANDROID=1` を付ける。
+// 配布対象はiPhoneのみで、通常のビルド・OTAの設定（fingerprint）には影響しない。
+const withAndroid = process.env.BENCHBOOK_ANDROID === '1';
+
 const config: ExpoConfig = {
   name: 'Benchbook',
   slug: 'benchbook',
   version: '1.0.0',
   scheme: 'benchbook',
-  platforms: ['ios'],
+  platforms: withAndroid ? ['ios', 'android'] : ['ios'],
+  ...(withAndroid ? { android: { package: 'jp.artilab.benchbook' } } : {}),
   // アプリ全体では向きを固定しない。画面ごとの向きは expo-router の
   // Stack.Screen options.orientation で制御する（src/app/_layout.tsx 参照）。
   orientation: 'default',
