@@ -213,12 +213,12 @@ table { border-collapse: collapse; }
 .players .pts { width: 8mm; }
 .running { width: 100%; table-layout: fixed; }
 .running th { font-size: 6.5pt; background: #eee; border: 0.2mm solid #111; height: 3.6mm; }
-.running td { border: 0.2mm solid #888; height: 3.55mm; text-align: center; font-size: 6.5pt; line-height: 1; padding: 0; position: relative; }
+.running td { border: 0.2mm solid #888; height: 3.9mm; text-align: center; font-size: 6.5pt; line-height: 1; padding: 0; position: relative; }
 .running .gap { width: 2mm; border: none; background: none; }
 .running .sc { color: #9aa0a6; }
 .running .sc.hit { font-weight: 700; }
 .running .no { font-weight: 700; }
-.running .slash { background-image: linear-gradient(to top right, transparent calc(50% - 0.18mm), currentColor calc(50% - 0.18mm), currentColor calc(50% + 0.18mm), transparent calc(50% + 0.18mm)); }
+.running .slash { background-image: linear-gradient(to bottom right, transparent calc(50% - 0.18mm), currentColor calc(50% - 0.18mm), currentColor calc(50% + 0.18mm), transparent calc(50% + 0.18mm)); }
 .running .end { border-bottom: 0.6mm solid currentColor; }
 .ring { display: inline-block; min-width: 3mm; height: 3mm; line-height: 2.6mm; border: 0.25mm solid currentColor; border-radius: 1.5mm; padding: 0 0.3mm; }
 .dot { display: inline-block; width: 2mm; height: 2mm; border-radius: 1mm; background: currentColor; vertical-align: middle; }
@@ -227,9 +227,9 @@ table { border-collapse: collapse; }
 .periods .tn { text-align: left; max-width: 50mm; overflow: hidden; white-space: nowrap; }
 .periods .final { font-weight: 700; font-size: 10pt; color: #111; }
 .legend { font-size: 6.5pt; color: #555; line-height: 1.5; text-align: right; }
-.q1 { color: ${PERIOD_COLORS[1]}; } .q2 { color: ${PERIOD_COLORS[2]}; }
-.q3 { color: ${PERIOD_COLORS[3]}; } .q4 { color: ${PERIOD_COLORS[4]}; }
-.qot { color: ${PERIOD_COLORS.ot}; }
+.q1, .running .q1 { color: ${PERIOD_COLORS[1]}; } .q2, .running .q2 { color: ${PERIOD_COLORS[2]}; }
+.q3, .running .q3 { color: ${PERIOD_COLORS[3]}; } .q4, .running .q4 { color: ${PERIOD_COLORS[4]}; }
+.qot, .running .qot { color: ${PERIOD_COLORS.ot}; }
 `;
 
 /**
