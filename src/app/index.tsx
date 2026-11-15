@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Updates from 'expo-updates';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { db } from '@/db/client';
 import { createGame, getLiveGame, isPeriodEnded, listEvents, listGames } from '@/db/repo';
@@ -17,8 +17,11 @@ const canCheckUpdate = Updates.isEnabled && !__DEV__;
 
 // 起動直後に一度だけ、進行中の試合へ直接戻る（SPEC 7章）
 let resumedOnLaunch = false;
-// OTAの自動確認は起動ごとに一度だけ
-let checkedUpdateOnLaunch = false;
+// OTAの自動確認は、ホームを開いたとき・アプリに戻ったときに行う。通信を繰り返さないよう間隔を空ける
+const AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+let lastAutoCheckAt = 0;
+// 取得済みの更新（再読み込みで適用できる）。画面を行き来しても案内を出し続ける
+let updateReady = false;
 
 const STATUS_LABEL: Record<Game['status'], string> = { prep: '準備中', live: '進行中', finished: '終了' };
 
@@ -27,6 +30,8 @@ export default function HomeScreen() {
   const [version] = useRefresh();
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(updateReady);
+  const [applying, setApplying] = useState(false);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- version で再読み込みする
   const games = useMemo(() => listGames(db), [version]);
@@ -43,7 +48,8 @@ export default function HomeScreen() {
     [router],
   );
 
-  // 取得した更新は次回の起動時に適用する。進行中の試合があるときは確認しない（SPEC 7章）
+  // 更新があれば取得まで済ませ、ホーム上部に案内を出す。適用は利用者が「更新する」を押したとき。
+  // 進行中の試合があるときは確認しない（SPEC 7章）
   const checkForUpdate = useCallback(async (manual: boolean) => {
     if (!canCheckUpdate) return;
     setBusy(true);
@@ -56,7 +62,9 @@ export default function HomeScreen() {
       }
       setUpdateStatus('更新をダウンロード中…');
       await Updates.fetchUpdateAsync();
-      setUpdateStatus('更新を取得しました。アプリを終了して再起動すると適用されます');
+      updateReady = true;
+      setReady(true);
+      setUpdateStatus(null);
     } catch (e) {
       // オフラインでも全機能が動くこと。自動確認の失敗は黙って無視する
       if (manual) setUpdateStatus(`確認できませんでした: ${e instanceof Error ? e.message : String(e)}`);
@@ -74,12 +82,30 @@ export default function HomeScreen() {
         return;
       }
       resumedOnLaunch = true;
-      if (!current && !checkedUpdateOnLaunch) {
-        checkedUpdateOnLaunch = true;
+      const autoCheck = () => {
+        if (updateReady || getLiveGame(db)) return;
+        if (Date.now() - lastAutoCheckAt < AUTO_CHECK_INTERVAL_MS) return;
+        lastAutoCheckAt = Date.now();
         void checkForUpdate(false);
-      }
+      };
+      autoCheck();
+      // ホームを開いたままアプリに戻ったときも確認する
+      const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') autoCheck();
+      });
+      return () => sub.remove();
     }, [openGame, checkForUpdate]),
   );
+
+  const applyUpdate = async () => {
+    setApplying(true);
+    try {
+      await Updates.reloadAsync();
+    } catch (e) {
+      setApplying(false);
+      setUpdateStatus(`更新できませんでした: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   const newGame = () => {
     const game = createGame(db);
@@ -88,6 +114,20 @@ export default function HomeScreen() {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
+      {ready && (
+        <View style={styles.update}>
+          <View style={styles.flex}>
+            <Text style={styles.updateTitle}>最新版があります</Text>
+            <Text style={styles.updateBody}>
+              {live ? '試合が終わってから更新してください' : '記録したデータはそのまま残ります'}
+            </Text>
+          </View>
+          {!live && (
+            <Button title={applying ? '更新中…' : '更新する'} small disabled={applying} onPress={() => void applyUpdate()} />
+          )}
+        </View>
+      )}
+
       {live && (
         <Pressable
           accessibilityRole="button"
@@ -157,7 +197,7 @@ export default function HomeScreen() {
             title="更新を確認"
             variant="secondary"
             small
-            disabled={!canCheckUpdate || busy}
+            disabled={!canCheckUpdate || busy || ready}
             onPress={() => void checkForUpdate(true)}
           />
         )}
@@ -170,6 +210,18 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 12, paddingBottom: 40 },
   flex: { flex: 1 },
+  update: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.okBg,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.ok,
+  },
+  updateTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  updateBody: { fontSize: 12, color: colors.sub },
   resume: { backgroundColor: colors.primary, borderRadius: 14, padding: 18, gap: 4 },
   resumeLabel: { color: colors.primaryText, fontSize: 14, fontWeight: '700' },
   resumeTeams: { color: colors.primaryText, fontSize: 18, fontWeight: '600' },
