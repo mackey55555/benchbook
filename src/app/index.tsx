@@ -144,7 +144,8 @@ export default function HomeScreen() {
       <Card>
         <Text style={styles.info}>バージョン {Constants.expoConfig?.version ?? '-'}</Text>
         <Text style={styles.info} selectable>
-          OTA {Updates.isEmbeddedLaunch ? 'ビルド同梱' : '適用済み'}　{Updates.updateId ?? '-'}
+          OTA {!Updates.isEnabled ? '無効（開発ビルド）' : Updates.isEmbeddedLaunch ? 'ビルド同梱' : '適用済み'}　
+          {Updates.updateId ?? '-'}
         </Text>
         <Text style={styles.info}>
           channel {Updates.channel ?? '-'}　{Updates.createdAt?.toLocaleString('ja-JP') ?? ''}
