@@ -1,6 +1,8 @@
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { expoDb } from '@/db/client';
@@ -13,6 +15,18 @@ import migrations from '../../drizzle/migrations';
  */
 export default function RootLayout() {
   const { success, error } = useMigrations(expoDb, migrations);
+
+  // Stack.Screen の orientation は画面本体にしか効かず、iOSではアラートを出すたびに
+  // 端末の向きへ回転してしまう。アプリ全体の向きも画面に合わせて固定する。
+  const pathname = usePathname();
+  const landscape = /\/(live|check)$/.test(pathname);
+  useEffect(() => {
+    ScreenOrientation.lockAsync(
+      landscape
+        ? ScreenOrientation.OrientationLock.LANDSCAPE
+        : ScreenOrientation.OrientationLock.PORTRAIT_UP,
+    ).catch(() => undefined);
+  }, [landscape]);
 
   if (error) {
     return (

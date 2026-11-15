@@ -192,10 +192,7 @@ export default function LiveScreen() {
   const confirmSub = () => {
     if (!subSheet) return;
     const clockSeconds = parseClockDigits(subSheet.clock, periodSeconds(period, game));
-    if (clockSeconds === undefined) {
-      Alert.alert('確認してください', `残り時間は 0:00〜${game[period <= RULES.regulationPeriods ? 'periodMinutes' : 'otMinutes']}:00 で入力してください（例：6分32秒 → 632）`);
-      return;
-    }
+    if (clockSeconds === undefined) return;
     const ok = attempt(() =>
       substitute(db, { gameId, period, side: subSheet.side, onCourt: subSheet.court, clockSeconds }),
     );
@@ -370,6 +367,15 @@ export default function LiveScreen() {
       </View>
     );
   };
+
+  // 残り時間の入力エラーはシート内に表示する（アラートは出さない）
+  const periodLength = periodSeconds(period, game);
+  const subClockError =
+    subSheet && parseClockDigits(subSheet.clock, periodLength) === undefined
+      ? Number(subSheet.clock.slice(-2)) >= 60
+        ? `秒は00〜59で入力してください（${clockDigitsLabel(subSheet.clock)} は入力できません）`
+        : `残り時間は ${clockDigitsLabel(String(periodLength / 60) + '00')} までです`
+      : null;
 
   const selectedLabel = selected
     ? `${selected.side} ${
@@ -651,14 +657,18 @@ export default function LiveScreen() {
                   ))}
                 </View>
               </Row>
-              <Text style={styles.subHint}>
-                残り時間は任意です（例：6分32秒 → 632）。入れると出場時間が正確になります。Qの切れ目の交代は入れなくても正確です。
-              </Text>
+              {subClockError ? (
+                <Text style={[styles.subHint, styles.subError]}>{subClockError}</Text>
+              ) : (
+                <Text style={styles.subHint}>
+                  残り時間は任意です（例：6分32秒 → 632）。入れると出場時間が正確になります。Qの切れ目の交代は入れなくても正確です。
+                </Text>
+              )}
               <Row>
                 <Button title="キャンセル" variant="secondary" onPress={() => setSubSheet(null)} style={styles.flex} />
                 <Button
                   title="交代を記録"
-                  disabled={subSheet.court.length > ON_COURT_MAX}
+                  disabled={subSheet.court.length > ON_COURT_MAX || subClockError !== null}
                   onPress={confirmSub}
                   style={styles.flex}
                 />
@@ -796,6 +806,7 @@ const styles = StyleSheet.create({
   },
   subKeyText: { fontSize: 18, fontWeight: '700', color: colors.text },
   subHint: { fontSize: 11, color: colors.sub },
+  subError: { fontSize: 13, fontWeight: '700', color: colors.danger },
   addCell: { backgroundColor: 'transparent', borderColor: colors.line, borderStyle: 'dashed' },
   addText: { fontSize: 13, fontWeight: '700', color: colors.sub },
   padSheet: { width: 440, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 14, gap: 10 },
