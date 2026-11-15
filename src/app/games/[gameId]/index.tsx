@@ -11,6 +11,7 @@ import { RULES, activeEvents, computePeriodScores, computeScore, periodLabel } f
 import { buildBoxScore, describeEvent, type BoxScoreLine } from '@/domain/stats';
 import type { Side } from '@/domain/types';
 import { shareImage, shareJson, sharePdf } from '@/lib/share';
+import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Button, Card, Chip, Row, Segmented } from '@/ui/components';
 import { EventLogSheet } from '@/ui/EventLogSheet';
@@ -50,6 +51,7 @@ export default function GameDetailScreen() {
   const promptedRef = useRef(false);
 
   const html = useMemo(() => (bundle ? buildRunningScoreHtml(bundle) : ''), [bundle]);
+  const boxHtml = useMemo(() => (bundle ? buildBoxScoreHtml(bundle) : ''), [bundle]);
   const baseName = bundle
     ? `${bundle.game.date}_${bundle.game.teamAName || 'A'}_vs_${bundle.game.teamBName || 'B'}`
     : 'benchbook';
@@ -95,12 +97,13 @@ export default function GameDetailScreen() {
     </ScrollView>
   );
 
-  const running = () => {
+  // A4のシート（HTML）を表示し、PDF・画像で共有する。ランニングスコアとボックススコアで共用
+  const sheet = (sheetHtml: string, name: string, withJson: boolean) => {
     const sheetWidth = width - 24;
     return (
-      <View style={styles.tabBody}>
+      <>
         <Row>
-          <Button title="PDF" small variant="secondary" disabled={busy} onPress={() => share(() => sharePdf(html, baseName))} />
+          <Button title="PDF" small variant="secondary" disabled={busy} onPress={() => share(() => sharePdf(sheetHtml, name))} />
           <Button
             title="画像"
             small
@@ -110,19 +113,21 @@ export default function GameDetailScreen() {
               share(async () => shareImage(await captureRef(sheetRef, { format: 'png', quality: 1 })))
             }
           />
-          <Button title="JSON" small variant="secondary" disabled={busy} onPress={shareBackup} />
+          {withJson && <Button title="JSON" small variant="secondary" disabled={busy} onPress={shareBackup} />}
         </Row>
         <View
           ref={sheetRef}
           collapsable={false}
           style={[styles.sheet, { width: sheetWidth, height: sheetWidth * A4_RATIO }]}
         >
-          <WebView originWhitelist={['*']} source={{ html }} style={styles.webview} scrollEnabled={false} />
+          <WebView originWhitelist={['*']} source={{ html: sheetHtml }} style={styles.webview} scrollEnabled={false} />
         </View>
         <Text style={styles.note}>拡大して見るときはPDFで共有してください</Text>
-      </View>
+      </>
     );
   };
+
+  const running = () => <View style={styles.tabBody}>{sheet(html, baseName, true)}</View>;
 
   const box = () => {
     const team = buildBoxScore(events, roster, filterPeriod)[boxSide];
@@ -141,6 +146,8 @@ export default function GameDetailScreen() {
     );
     return (
       <View style={styles.tabBody}>
+        {sheet(boxHtml, `${baseName}_boxscore`, false)}
+        <Text style={styles.subTitle}>Q別に見る</Text>
         <Segmented
           options={[
             { value: 'A', label: `A ${game.teamAName}` },
@@ -321,6 +328,7 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
   webview: { flex: 1, backgroundColor: '#fff' },
   note: { fontSize: 12, color: colors.sub },
+  subTitle: { fontSize: 13, fontWeight: '700', color: colors.sub, marginTop: 8 },
   tr: {
     flexDirection: 'row',
     alignItems: 'center',
