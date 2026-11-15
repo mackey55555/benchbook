@@ -7,6 +7,7 @@ import { WebView } from 'react-native-webview';
 import { exportGame } from '@/db/backup';
 import { db } from '@/db/client';
 import { deleteGame, reopenGame } from '@/db/repo';
+import { computeLineupStats, formatClock } from '@/domain/lineup';
 import { RULES, activeEvents, computePeriodScores, computeScore, periodLabel } from '@/domain/rules';
 import { buildBoxScore, describeEvent, type BoxScoreLine } from '@/domain/stats';
 import type { Side } from '@/domain/types';
@@ -131,6 +132,21 @@ export default function GameDetailScreen() {
 
   const box = () => {
     const team = buildBoxScore(events, roster, filterPeriod)[boxSide];
+    // 出場時間と +/- は試合全体の値なので、Qで絞り込んでいないときだけ出す
+    const lineup =
+      filterPeriod === undefined
+        ? computeLineupStats(events, roster, { ...game, finished: game.status === 'finished' })
+        : null;
+    const lineupCells = (rosterId: string | null) => {
+      if (!lineup) return null;
+      const stat = rosterId ? lineup.get(rosterId) : undefined;
+      return (
+        <>
+          <Text style={styles.td}>{stat ? `${stat.approximate ? '約' : ''}${formatClock(stat.seconds)}` : ''}</Text>
+          <Text style={styles.td}>{stat ? `${stat.plusMinus > 0 ? '+' : ''}${stat.plusMinus}` : ''}</Text>
+        </>
+      );
+    };
     const line = (l: BoxScoreLine, isTotal = false) => (
       <View key={l.rosterId ?? 'total'} style={[styles.tr, isTotal && styles.trTotal]}>
         <Text style={[styles.td, styles.tdNo]}>{isTotal ? '' : l.number}</Text>
@@ -142,6 +158,7 @@ export default function GameDetailScreen() {
             {c.value(l)}
           </Text>
         ))}
+        {lineupCells(isTotal ? null : l.rosterId)}
       </View>
     );
     return (
@@ -167,6 +184,12 @@ export default function GameDetailScreen() {
                   {c.label}
                 </Text>
               ))}
+              {lineup && (
+                <>
+                  <Text style={[styles.td, styles.th]}>MIN</Text>
+                  <Text style={[styles.td, styles.th]}>+/-</Text>
+                </>
+              )}
             </View>
             {team.players.map((l) => line(l))}
             {line(team.total, true)}
