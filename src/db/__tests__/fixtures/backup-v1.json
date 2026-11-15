@@ -1,0 +1,42 @@
+{
+  "format": "benchbook-backup",
+  "version": 1,
+  "exportedAt": "2026-11-15T00:00:00.000Z",
+  "scope": "all",
+  "teams": [
+    { "id": "T1", "name": "自チーム", "isOwn": true, "createdAt": 1000 },
+    { "id": "T2", "name": "ライバルズ", "isOwn": false, "createdAt": 1001 }
+  ],
+  "players": [
+    { "id": "P4", "teamId": "T1", "number": "4", "name": "佐藤", "isActive": true },
+    { "id": "P5", "teamId": "T1", "number": "5", "name": "鈴木", "isActive": true },
+    { "id": "P10", "teamId": "T2", "number": "10", "name": "", "isActive": true }
+  ],
+  "games": [
+    {
+      "id": "G1", "date": "2026-11-01", "leagueName": "秋季リーグ", "venue": "市民体育館",
+      "ownSide": "A", "teamAName": "自チーム", "teamBName": "ライバルズ",
+      "periodMinutes": 10, "otMinutes": 5, "status": "live", "currentPeriod": 2,
+      "createdAt": 2000, "finishedAt": null
+    }
+  ],
+  "gameRoster": [
+    { "id": "R4", "gameId": "G1", "side": "A", "playerId": "P4", "number": "4", "name": "佐藤", "isStarter": true, "isCaptain": true },
+    { "id": "R5", "gameId": "G1", "side": "A", "playerId": "P5", "number": "5", "name": "鈴木", "isStarter": true, "isCaptain": false },
+    { "id": "R10", "gameId": "G1", "side": "B", "playerId": null, "number": "10", "name": "", "isStarter": false, "isCaptain": false }
+  ],
+  "gameStaff": [
+    { "id": "S1", "gameId": "G1", "side": "A", "role": "HC", "name": "田中" }
+  ],
+  "gameEvents": [
+    { "id": "E1", "gameId": "G1", "orderKey": 1, "period": 1, "side": "A", "rosterId": "R4", "type": "FG2_MADE", "foulKind": null, "ftAwarded": null, "createdAt": 3001, "voidedAt": null, "replacesEventId": null },
+    { "id": "E2", "gameId": "G1", "orderKey": 2, "period": 1, "side": "A", "rosterId": "R5", "type": "FG2_MADE", "foulKind": null, "ftAwarded": null, "createdAt": 3002, "voidedAt": 3010, "replacesEventId": null },
+    { "id": "E3", "gameId": "G1", "orderKey": 2, "period": 1, "side": "A", "rosterId": "R5", "type": "FG3_MADE", "foulKind": null, "ftAwarded": null, "createdAt": 3010, "voidedAt": null, "replacesEventId": "E2" },
+    { "id": "E4", "gameId": "G1", "orderKey": 3, "period": 1, "side": "B", "rosterId": "R10", "type": "FG2_MADE", "foulKind": null, "ftAwarded": null, "createdAt": 3003, "voidedAt": null, "replacesEventId": null },
+    { "id": "E5", "gameId": "G1", "orderKey": 4, "period": 1, "side": "A", "rosterId": "R4", "type": "FOUL", "foulKind": "P", "ftAwarded": 2, "createdAt": 3004, "voidedAt": null, "replacesEventId": null },
+    { "id": "E6", "gameId": "G1", "orderKey": 5, "period": 1, "side": null, "rosterId": null, "type": "PERIOD_END", "foulKind": null, "ftAwarded": null, "createdAt": 3005, "voidedAt": null, "replacesEventId": null }
+  ],
+  "periodChecks": [
+    { "gameId": "G1", "period": 1, "scoreA": 5, "scoreB": 2, "teamFoulsA": 1, "teamFoulsB": 0, "matched": true, "note": "", "confirmedAt": 3006 }
+  ]
+}
