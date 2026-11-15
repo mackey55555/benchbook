@@ -37,6 +37,9 @@ export interface RunningScoreInput {
     teamAName: string;
     teamBName: string;
     currentPeriod: number;
+    periodMinutes: number;
+    otMinutes: number;
+    status: 'prep' | 'live' | 'finished';
   };
   roster: readonly RosterEntry[];
   staff: readonly { side: Side; role: 'HC' | 'AC'; name: string }[];

@@ -25,6 +25,7 @@ export function ev(
     type,
     foulKind: null,
     ftAwarded: null,
+    clockSeconds: null,
     createdAt: seq,
     voidedAt: null,
     replacesEventId: null,

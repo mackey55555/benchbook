@@ -268,7 +268,7 @@ export function EventLogSheet(props: {
                       >
                         {describeEvent(e, bundle.roster)}
                       </Text>
-                      {e.type !== 'TIMEOUT' && (
+                      {e.type !== 'TIMEOUT' && e.type !== 'SUB_IN' && e.type !== 'SUB_OUT' && (
                         <Button title="修正" variant="secondary" small onPress={() => startEdit(e)} />
                       )}
                       <Button title="削除" variant="ghost" small onPress={() => remove(e)} />

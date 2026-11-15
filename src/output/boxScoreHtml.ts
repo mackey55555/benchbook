@@ -1,4 +1,5 @@
 import { RULES, computePeriodScores, computeScore, periodLabel } from '@/domain/rules';
+import { computeLineupStats, formatClock, type LineupStat } from '@/domain/lineup';
 import { buildBoxScore, type BoxScoreLine, type TeamBoxScore } from '@/domain/stats';
 import type { Side } from '@/domain/types';
 
@@ -29,27 +30,43 @@ function shooting(made: number, attempted: number, blank: boolean): string {
   return `<td>${made}</td><td>${attempted}</td><td class="pct">${percent(made, attempted)}</td>`;
 }
 
-function line(l: BoxScoreLine, marks: string, isTotal = false): string {
+function lineupCells(stat: LineupStat | undefined): string {
+  if (!stat) return '<td></td><td></td>';
+  const min = stat.seconds > 0 || stat.plusMinus !== 0 ? `${stat.approximate ? '約' : ''}${formatClock(stat.seconds)}` : '';
+  const pm = stat.seconds > 0 || stat.plusMinus !== 0 ? `${stat.plusMinus > 0 ? '+' : ''}${stat.plusMinus}` : '';
+  return `<td class="min">${min}</td><td>${pm}</td>`;
+}
+
+function line(l: BoxScoreLine, marks: string, stat: LineupStat | undefined, isTotal = false): string {
   const blank = !isTotal && !hasRecord(l);
   const n = (v: number) => (blank ? '' : String(v));
   const head = isTotal
     ? '<td class="total-label" colspan="3">合計</td>'
     : `<td class="no">${esc(l.number)}</td><td class="s">${marks}</td><td class="name">${esc(l.name)}</td>`;
-  return `<tr class="${isTotal ? 'total' : ''}">${head}<td class="pts">${n(l.pts)}</td>${shooting(l.fg3m, l.fg3a, blank)}${shooting(l.fg2m, l.fg2a, blank)}${shooting(l.ftm, l.fta, blank)}<td>${n(l.pf)}</td><td>${n(l.oreb)}</td><td>${n(l.dreb)}</td><td>${n(l.reb)}</td><td>${n(l.tov)}</td><td>${n(l.ast)}</td><td>${n(l.stl)}</td><td>${n(l.blk)}</td></tr>`;
+  return `<tr class="${isTotal ? 'total' : ''}">${head}<td class="pts">${n(l.pts)}</td>${shooting(l.fg3m, l.fg3a, blank)}${shooting(l.fg2m, l.fg2a, blank)}${shooting(l.ftm, l.fta, blank)}<td>${n(l.pf)}</td><td>${n(l.oreb)}</td><td>${n(l.dreb)}</td><td>${n(l.reb)}</td><td>${n(l.tov)}</td><td>${n(l.ast)}</td><td>${n(l.stl)}</td><td>${n(l.blk)}</td>${lineupCells(stat)}</tr>`;
 }
 
-function teamTable(input: RunningScoreInput, side: Side, team: TeamBoxScore): string {
+function teamTable(
+  input: RunningScoreInput,
+  side: Side,
+  team: TeamBoxScore,
+  lineup: Map<string, LineupStat>,
+): string {
   const name = (side === 'A' ? input.game.teamAName : input.game.teamBName) || `チーム${side}`;
   const rosterById = new Map(input.roster.map((r) => [r.id, r]));
   const rows = team.players
     .map((l) => {
       const r = l.rosterId ? rosterById.get(l.rosterId) : undefined;
-      return line(l, `${r?.isStarter ? '●' : ''}${r?.isCaptain ? '<small>C</small>' : ''}`);
+      return line(
+        l,
+        `${r?.isStarter ? '●' : ''}${r?.isCaptain ? '<small>C</small>' : ''}`,
+        l.rosterId ? lineup.get(l.rosterId) : undefined,
+      );
     })
     .join('');
   const empty = Array.from(
     { length: Math.max(0, RULES.maxRosterSize - team.players.length) },
-    () => `<tr>${'<td></td>'.repeat(21)}</tr>`,
+    () => `<tr>${'<td></td>'.repeat(23)}</tr>`,
   ).join('');
   const t = team.total;
   const fgm = t.fg2m + t.fg3m;
@@ -58,12 +75,12 @@ function teamTable(input: RunningScoreInput, side: Side, team: TeamBoxScore): st
   return `<section class="team">
 <div class="tname">${esc(name)}<span class="hc">${hc ? `HC：${esc(hc)}` : ''}</span></div>
 <table class="box">
-<colgroup><col class="c-no"><col class="c-s"><col class="c-name"><col class="c-pts">${'<col><col><col class="c-pct">'.repeat(3)}${'<col>'.repeat(8)}</colgroup>
+<colgroup><col class="c-no"><col class="c-s"><col class="c-name"><col class="c-pts">${'<col><col><col class="c-pct">'.repeat(3)}${'<col>'.repeat(8)}<col class="c-min"><col></colgroup>
 <thead>
-<tr><th rowspan="2" class="no">No.</th><th rowspan="2" class="s">S</th><th rowspan="2" class="name">Player</th><th rowspan="2" class="pts">PTS</th><th colspan="3">3P FG</th><th colspan="3">2P FG</th><th colspan="3">FT</th><th rowspan="2">F</th><th colspan="3">REBOUNDS</th><th rowspan="2">TO</th><th rowspan="2">AS</th><th rowspan="2">ST</th><th rowspan="2">BS</th></tr>
+<tr><th rowspan="2" class="no">No.</th><th rowspan="2" class="s">S</th><th rowspan="2" class="name">Player</th><th rowspan="2" class="pts">PTS</th><th colspan="3">3P FG</th><th colspan="3">2P FG</th><th colspan="3">FT</th><th rowspan="2">F</th><th colspan="3">REBOUNDS</th><th rowspan="2">TO</th><th rowspan="2">AS</th><th rowspan="2">ST</th><th rowspan="2">BS</th><th rowspan="2">MIN</th><th rowspan="2">+/-</th></tr>
 <tr><th>M</th><th>A</th><th class="pct">%</th><th>M</th><th>A</th><th class="pct">%</th><th>M</th><th>A</th><th class="pct">%</th><th>OR</th><th>DR</th><th>TR</th></tr>
 </thead>
-<tbody>${rows}${empty}${line(t, '', true)}</tbody>
+<tbody>${rows}${empty}${line(t, '', undefined, true)}</tbody>
 </table>
 <div class="fg">FG（2P＋3P）　${fgm}/${fga}　${percent(fgm, fga)}</div>
 </section>`;
@@ -96,7 +113,7 @@ table { border-collapse: collapse; }
 .box { width: 100%; table-layout: fixed; }
 .box th, .box td { border: 0.2mm solid #111; height: 5.2mm; padding: 0 0.5mm; font-size: 7.5pt; text-align: center; overflow: hidden; white-space: nowrap; }
 .box th { background: #eee; font-weight: 600; font-size: 6.5pt; height: 3.8mm; }
-.box .c-no { width: 8mm; } .box .c-s { width: 6mm; } .box .c-name { width: 30mm; } .box .c-pts { width: 9mm; } .box .c-pct { width: 12.5mm; }
+.box .c-no { width: 8mm; } .box .c-s { width: 6mm; } .box .c-name { width: 27mm; } .box .c-pts { width: 9mm; } .box .c-pct { width: 11.5mm; } .box .c-min { width: 12mm; }
 .box .no { font-weight: 700; }
 .box .s { width: 6mm; font-size: 6.5pt; }
 .box .name { width: 30mm; text-align: left; padding-left: 1mm; }
@@ -116,6 +133,12 @@ table { border-collapse: collapse; }
 export function buildBoxScoreHtml(input: RunningScoreInput): string {
   const { game, events, roster } = input;
   const box = buildBoxScore(events, roster);
+  const lineup = computeLineupStats(events, roster, {
+    periodMinutes: game.periodMinutes,
+    otMinutes: game.otMinutes,
+    currentPeriod: game.currentPeriod,
+    finished: game.status === 'finished',
+  });
   const total = computeScore(events);
   const periods = computePeriodScores(events, Math.max(game.currentPeriod, RULES.regulationPeriods));
   const mark = (side: Side) => {
@@ -148,8 +171,8 @@ ${result('A')}
 ${result('B')}
 <div class="side">${esc(game.teamBName || 'チームB')}</div>
 </div>
-${teamTable(input, 'A', box.A)}
-${teamTable(input, 'B', box.B)}
-<div class="legend">PTS：得点　3P／2P FG：3点／2点シュート　FT：フリースロー　M：成功　A：試投　%：成功率　F：ファウル　OR／DR／TR：オフェンス／ディフェンス／トータルリバウンド　TO：ターンオーバー　AS：アシスト　ST：スティール　BS：ブロック　S：●＝スターター、C＝キャプテン<br>これは控えの記録であり、公式記録ではありません。出場時間は記録していません</div>
+${teamTable(input, 'A', box.A, lineup)}
+${teamTable(input, 'B', box.B, lineup)}
+<div class="legend">PTS：得点　3P／2P FG：3点／2点シュート　FT：フリースロー　M：成功　A：試投　%：成功率　F：ファウル　OR／DR／TR：オフェンス／ディフェンス／トータルリバウンド　TO：ターンオーバー　AS：アシスト　ST：スティール　BS：ブロック　S：●＝スターター、C＝キャプテン　MIN：出場時間（「約」は時刻なしの交代を含む概算）　+/-：出場中の得失点差<br>MIN と +/- は交代を記録したチームだけ表示します。これは控えの記録であり、公式記録ではありません</div>
 </div></body></html>`;
 }

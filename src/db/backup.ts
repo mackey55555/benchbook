@@ -66,6 +66,7 @@ const COLUMNS = {
     type: 'string',
     foulKind: 'string?',
     ftAwarded: 'number?',
+    clockSeconds: 'number?',
     createdAt: 'number',
     voidedAt: 'number?',
     replacesEventId: 'string?',

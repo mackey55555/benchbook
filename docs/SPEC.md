@@ -20,12 +20,12 @@
 - Q終了時の照合フロー、延長対応
 - 出力：公式様式のランニングスコア（画面＋PDF）、詳細画面（ボックススコア・プレー一覧・Q別得点）
 - 試合データのJSONエクスポート/インポート
+- 選手交代の記録（任意）。コート上の5人の表示、出場時間、+/-。交代時に会場の時計の残り時間を任意で入力する（2026-11-16 追加）
 
 **非スコープ（やらない）**
 
 - 公式スコアシートの代替（オフィシャル業務での使用は想定しない）
-- ゲームクロック・ショットクロック管理、TO・得点の時刻記録
-- 選手交代（オンコート5人）の管理 → 出場時間・+/-は出せない
+- ゲームクロック・ショットクロック管理（アプリ内で時計は動かさない）、TO・得点の時刻記録
 - サーバー同期・Web閲覧・複数端末同時入力
 - App Store公開
 
@@ -87,7 +87,7 @@
 | `games` | id, date, league_name, venue, own_side（A/B）, team_a_name, team_b_name, period_minutes, ot_minutes, status（prep / live / finished）, current_period, created_at, finished_at |
 | `game_roster` | id, game_id, side（A/B）, player_id（相手チームはnull可）, number, name, is_starter, is_captain |
 | `game_staff` | id, game_id, side, role（HC/AC）, name |
-| `game_events` | id（ULID）, game_id, order_key（REAL）, period（1〜4、5以降は延長）, side, roster_id（null=チーム/ベンチ）, type, foul_kind, ft_awarded, created_at, voided_at, replaces_event_id |
+| `game_events` | id（ULID）, game_id, order_key（REAL）, period（1〜4、5以降は延長）, side, roster_id（null=チーム/ベンチ）, type, foul_kind, ft_awarded, clock_seconds, created_at, voided_at, replaces_event_id |
 | `period_checks` | game_id, period, score_a, score_b, team_fouls_a, team_fouls_b, matched（bool）, note, confirmed_at |
 
 ※ `game_roster` には背番号と氏名をスナップショットで保持し、後から選手マスタを変えても過去の試合記録が変わらないようにする。
@@ -105,8 +105,16 @@
 | `TIMEOUT` | side単位（roster_idはnull） | — |
 | `PERIOD_END` | Q終了の区切り | — |
 | `L2M` | 第4Q「残り2分」トグルをONにした位置のマーカー（OFFでvoid）。TO上限の計算に使う | — |
+| `SUB_IN` / `SUB_OUT` | 選手交代。`clock_seconds`（そのピリオドの残り秒、任意）を持つ。1回の交代は同じ `created_at` で記録する | — |
 
 ※ `PERIOD_END` と `L2M` はチームに属さないため `side` は null。
+
+**交代と出場時間**（`src/domain/lineup.ts`）
+
+- コート上の選手＝先発（`game_roster.is_starter`）から始めて `SUB_IN` / `SUB_OUT` を記録順に適用したもの
+- 先発が選ばれている、または交代の記録があるチームだけを「交代を管理している」とみなす（相手チームは任意）
+- 出場時間：残り時間付きの交代はその時刻、時刻なしの交代は直前に分かっている時刻（ピリオド開始・終了、前の時刻付き交代）で計算する。プレー中の時刻なし交代を含む選手は概算として「約」を付ける
+- +/-：出場中のチーム得失点差
 
 **ドメイン関数（純粋関数・単体テスト必須）**：`computeScore` / `computeTeamFouls(period)` / `computePlayerFouls` / `checkDisqualification` / `remainingTimeouts` / `buildRunningScore` / `buildBoxScore`
 

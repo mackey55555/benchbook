@@ -1,3 +1,4 @@
+import { formatClock, isLineupTracked, onCourtIds } from './lineup';
 import {
   activeEvents,
   checkDisqualification,
@@ -231,6 +232,8 @@ export function buildBoxScore(
 
 export interface PlayerState {
   roster: RosterEntry;
+  /** コート上にいるか（交代を管理していないチームは常に false） */
+  onCourt: boolean;
   fouls: PlayerFouls;
   status: PlayerStatus;
   points: number;
@@ -242,6 +245,8 @@ export interface TeamState {
   inBonus: boolean;
   timeoutsRemaining: number;
   coach: CoachFouls;
+  /** 交代を管理しているか（先発が選ばれている、または交代の記録がある） */
+  lineupTracked: boolean;
   players: PlayerState[];
 }
 
@@ -267,7 +272,10 @@ export function deriveGameState(
   }
   const team = (side: Side): TeamState => {
     const teamFouls = computeTeamFouls(events, side, period);
+    const lineupTracked = isLineupTracked(events, roster, side);
+    const court = lineupTracked ? onCourtIds(events, roster, side) : new Set<string>();
     return {
+      lineupTracked,
       score: score[side],
       teamFouls,
       inBonus: isInBonus(teamFouls),
@@ -280,6 +288,7 @@ export function deriveGameState(
           const fouls = computePlayerFouls(events, r.id);
           return {
             roster: r,
+            onCourt: court.has(r.id),
             fouls,
             status: checkDisqualification(fouls),
             points: pointsByRoster.get(r.id) ?? 0,
@@ -307,6 +316,8 @@ export const EVENT_LABELS: Record<EventType, string> = {
   TIMEOUT: 'TO',
   PERIOD_END: '終了',
   L2M: '残り2分',
+  SUB_IN: 'IN',
+  SUB_OUT: 'OUT',
 };
 
 /** ログ表示用の1行（例：「A #7 3P○」「B ベンチ F(C)」「Q1終了」） */
@@ -322,5 +333,6 @@ export function describeEvent(e: GameEvent, roster: readonly RosterEntry[]): str
     e.type === 'FOUL' && e.foulKind
       ? `F(${foulNotation(e.foulKind, e.ftAwarded)})`
       : EVENT_LABELS[e.type];
-  return `${side} ${who} ${what}`;
+  const clock = e.clockSeconds !== null ? ` ${formatClock(e.clockSeconds)}` : '';
+  return `${side} ${who} ${what}${clock}`;
 }

@@ -87,6 +87,7 @@ export const gameEvents = sqliteTable(
     type: text('type').$type<EventType>().notNull(),
     foulKind: text('foul_kind').$type<FoulKind>(),
     ftAwarded: integer('ft_awarded'),
+    clockSeconds: integer('clock_seconds'),
     createdAt: integer('created_at').notNull(),
     voidedAt: integer('voided_at'),
     replacesEventId: text('replaces_event_id'),

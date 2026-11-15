@@ -19,6 +19,9 @@ export const EVENT_TYPES = [
   'PERIOD_END',
   // 第4Q「残り2分」トグルのON位置を示すマーカー（SPECへの追加。TO上限の計算に必要）
   'L2M',
+  // 選手交代（SPECへの追加）。コート上の5人と出場時間・+/- の算出に使う
+  'SUB_IN',
+  'SUB_OUT',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -44,6 +47,8 @@ export interface GameEvent {
   type: EventType;
   foulKind: FoulKind | null;
   ftAwarded: number | null;
+  /** そのピリオドの残り時間（秒）。交代で任意入力。未入力は null */
+  clockSeconds: number | null;
   createdAt: number;
   voidedAt: number | null;
   replacesEventId: string | null;

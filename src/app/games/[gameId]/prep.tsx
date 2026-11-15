@@ -67,9 +67,23 @@ export default function PrepScreen() {
     }
   };
 
-  const start = () => {
+  const doStart = () => {
     if (!run(() => startGame(db, gameId))) return;
     router.replace(`/games/${gameId}/live`);
+  };
+
+  // 交代・出場時間は先発（最初にコートに立つ5人）を起点に記録する
+  const start = () => {
+    const starters = roster.filter((r) => r.side === game.ownSide && r.isStarter).length;
+    if (starters === RULES.startersCount) return doStart();
+    Alert.alert(
+      '自チームの先発が5名選ばれていません',
+      `現在 ${starters}名です。交代と出場時間を記録するには、先発を5名選んでから開始してください。`,
+      [
+        { text: '戻って選ぶ', style: 'cancel' },
+        { text: 'このまま開始', onPress: doStart },
+      ],
+    );
   };
 
   const confirmDelete = () =>
