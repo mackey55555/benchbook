@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { computeTeamFouls, remainingTimeouts } from '@/domain/rules';
 import { buildBoxScore, buildRunningScore, deriveGameState } from '@/domain/stats';
 import type { EventType, FoulKind, Side } from '@/domain/types';
+import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 
 import {
@@ -189,5 +190,20 @@ describe('通し入力シナリオ', () => {
     expect(html).toContain('自チーム 22 - 21 相手');
     expect(html).toContain('<th>OT1</th>');
     if (process.env.SAMPLE_HTML) fs.writeFileSync(process.env.SAMPLE_HTML, html);
+  });
+
+  it('ボックススコアのHTMLに勝敗・Q別得点・合計と成功率が出る', () => {
+    const html = buildBoxScoreHtml(bundle);
+    expect(html).toContain('<span class="mark">○</span><span class="final">22</span>');
+    expect(html).toContain('<span class="mark">●</span><span class="final">21</span>');
+    expect(html).toContain('<div><span>7</span><span class="q">Q1</span><span>5</span></div>');
+    expect(html).toContain('<div><span>2</span><span class="q">OT1</span><span>1</span></div>');
+    // A合計：PTS 22、3P 4/4、2P 4/4、FT 2/4、F 8、OR1 DR1 TR2、TO0 AS1 ST1 BS0
+    expect(html).toContain(
+      '<td class="total-label" colspan="3">合計</td><td class="pts">22</td><td>4</td><td>4</td><td class="pct">100.0%</td><td>4</td><td>4</td><td class="pct">100.0%</td><td>2</td><td>4</td><td class="pct">50.0%</td><td>8</td><td>1</td><td>1</td><td>2</td><td>0</td><td>1</td><td>1</td><td>0</td><td></td><td></td>',
+    );
+    expect(html).toContain('FG（2P＋3P）　8/8　100.0%');
+    expect(html).toContain('FG（2P＋3P）　8/9　88.9%');
+    if (process.env.SAMPLE_BOX_HTML) fs.writeFileSync(process.env.SAMPLE_BOX_HTML, html);
   });
 });

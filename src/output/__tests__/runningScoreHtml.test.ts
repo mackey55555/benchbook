@@ -13,6 +13,9 @@ const game = {
   teamAName: 'ベンチブックス',
   teamBName: 'ライバルズ',
   currentPeriod: 2,
+  periodMinutes: 10,
+  otMinutes: 5,
+  status: 'live' as const,
 };
 const players = [...roster('A', ['4', '5']), ...roster('B', ['10'])];
 

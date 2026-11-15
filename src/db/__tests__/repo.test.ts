@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { computeScore, remainingTimeouts } from '@/domain/rules';
+import { computeLineupStats, onCourtIds } from '@/domain/lineup';
 import { buildRunningScore } from '@/domain/stats';
 
 import {
@@ -33,6 +34,7 @@ import {
   setOwnSide,
   setStarter,
   startGame,
+  substitute,
   toggleCaptain,
   undoLastEvent,
   updateGame,
@@ -52,6 +54,10 @@ function setupGame(db: Db) {
   const id = (side: 'A' | 'B', number: string) =>
     roster.find((r) => r.side === side && r.number === number)!.id;
   return { game, id };
+}
+
+function addPlayerToRoster(db: Db, gameId: string) {
+  addRosterEntry(db, gameId, 'A', { number: '99' });
 }
 
 describe('チーム・選手マスタ', () => {
@@ -271,6 +277,76 @@ describe('イベントの追加・取消・修正', () => {
     expect(remainingTimeouts(listEvents(db, game.id), 'A', 4)).toBe(2);
     setLastTwoMinutes(db, game.id, false);
     expect(remainingTimeouts(listEvents(db, game.id), 'A', 4)).toBe(3);
+  });
+});
+
+describe('交代', () => {
+  function setupLineup(db: Db) {
+    const ctx = setupGame(db);
+    for (const n of ['4', '5', '6', '7']) setStarter(db, ctx.id('A', n), true);
+    return ctx;
+  }
+  const court = (db: Db, gameId: string) => {
+    const b = getGameBundle(db, gameId)!;
+    return [...onCourtIds(b.events, b.roster, 'A')].map((id) => b.roster.find((r) => r.id === id)!.number).sort();
+  };
+
+  it('コート上の選手との差分を IN/OUT として記録する', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupLineup(db);
+    const n = substitute(db, {
+      gameId: game.id, period: 1, side: 'A', clockSeconds: 392,
+      onCourt: [id('A', '5'), id('A', '6'), id('A', '7'), id('A', '8')],
+    });
+    expect(n).toBe(2);
+    expect(court(db, game.id)).toEqual(['5', '6', '7', '8']);
+    const subs = listEvents(db, game.id).filter((e) => e.type.startsWith('SUB'));
+    expect(subs.map((e) => [e.type, e.clockSeconds])).toEqual([['SUB_OUT', 392], ['SUB_IN', 392]]);
+  });
+
+  it('変更がなければ何も記録しない。6人以上・不正な時刻は拒否する', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupLineup(db);
+    const same = ['4', '5', '6', '7'].map((n) => id('A', n));
+    expect(substitute(db, { gameId: game.id, period: 1, side: 'A', clockSeconds: null, onCourt: same })).toBe(0);
+    const base = { gameId: game.id, period: 1, side: 'A' as const };
+    expect(() => substitute(db, { ...base, clockSeconds: 601, onCourt: same })).toThrow(/残り時間/);
+    addPlayerToRoster(db, game.id);
+    const six = [...same, id('A', '8'), listRoster(db, game.id).find((r) => r.number === '99')!.id];
+    expect(() => substitute(db, { ...base, clockSeconds: null, onCourt: six })).toThrow(/5人まで/);
+    expect(() => substitute(db, { ...base, clockSeconds: null, onCourt: [id('B', '10')] })).toThrow(/出場登録にない/);
+  });
+
+  it('UNDOは1回の交代（IN/OUT）をまとめて取り消す', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupLineup(db);
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE' });
+    substitute(db, {
+      gameId: game.id, period: 1, side: 'A', clockSeconds: null,
+      onCourt: [id('A', '6'), id('A', '7'), id('A', '8')],
+    });
+    expect(court(db, game.id)).toEqual(['6', '7', '8']);
+    undoLastEvent(db, game.id, 1);
+    expect(court(db, game.id)).toEqual(['4', '5', '6', '7']);
+    expect(computeScore(listEvents(db, game.id))).toEqual({ A: 2, B: 0 });
+  });
+
+  it('出場時間と +/- が試合設定（Q時間）から出る', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupLineup(db);
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG3_MADE' });
+    substitute(db, {
+      gameId: game.id, period: 1, side: 'A', clockSeconds: 300,
+      onCourt: [id('A', '5'), id('A', '6'), id('A', '7'), id('A', '8')],
+    });
+    addEvent(db, { gameId: game.id, period: 1, side: 'B', rosterId: id('B', '10'), type: 'FG2_MADE' });
+    confirmPeriod(db, game.id, 1);
+    const b = getGameBundle(db, game.id)!;
+    const stats = computeLineupStats(b.events, b.roster, { ...b.game, finished: b.game.status === 'finished' });
+    expect(stats.get(id('A', '4'))).toMatchObject({ seconds: 300, plusMinus: 3, approximate: false });
+    expect(stats.get(id('A', '8'))).toMatchObject({ seconds: 300, plusMinus: -2 });
+    expect(stats.get(id('A', '5'))).toMatchObject({ seconds: 600, plusMinus: 1 });
+    expect(stats.has(id('B', '10'))).toBe(false);
   });
 });
 

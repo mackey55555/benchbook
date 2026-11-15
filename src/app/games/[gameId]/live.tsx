@@ -8,11 +8,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '@/db/client';
 import {
   addEvent,
+  addRosterEntry,
   endPeriod,
   isPeriodEnded,
   setLastTwoMinutes,
+  substitute,
   undoLastEvent,
 } from '@/db/repo';
+import { ON_COURT_MAX, clockDigitsLabel, parseClockDigits, periodSeconds } from '@/domain/lineup';
 import { RULES, activeEvents, periodLabel } from '@/domain/rules';
 import { deriveGameState, describeEvent, type PlayerState, type TeamState } from '@/domain/stats';
 import {
@@ -67,6 +70,10 @@ export default function LiveScreen() {
   const [selected, setSelected] = useState<Selection | null>(null);
   const [foulSheet, setFoulSheet] = useState<{ kind: FoulKind; ft: number } | null>(null);
   const [logOpen, setLogOpen] = useState(false);
+  // 試合中の背番号追加（開始時に相手の番号が全員分かっていない場合のため）
+  const [adding, setAdding] = useState<{ side: Side; number: string } | null>(null);
+  // 交代シート：交代後にコート上にいる選手と、残り時間（テンキーの数字。空なら時刻なし）
+  const [subSheet, setSubSheet] = useState<{ side: Side; court: string[]; clock: string } | null>(null);
 
   const period = bundle?.game.currentPeriod ?? 1;
   const state = useMemo(
@@ -182,6 +189,32 @@ export default function LiveScreen() {
       { text: 'キャンセル', style: 'cancel' },
     ]);
 
+  const confirmSub = () => {
+    if (!subSheet) return;
+    const clockSeconds = parseClockDigits(subSheet.clock, periodSeconds(period, game));
+    if (clockSeconds === undefined) return;
+    const ok = attempt(() =>
+      substitute(db, { gameId, period, side: subSheet.side, onCourt: subSheet.court, clockSeconds }),
+    );
+    reload();
+    if (!ok) return;
+    setSubSheet(null);
+    setSelected(null);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  // 追加した選手はそのまま選択状態にして、続けてアクションを押せるようにする
+  const addNumber = () => {
+    if (!adding) return;
+    let added: { id: string } | undefined;
+    const ok = attempt(() => (added = addRosterEntry(db, gameId, adding.side, { number: adding.number })));
+    reload();
+    if (!ok || !added) return;
+    setSelected({ side: adding.side, rosterId: added.id });
+    setAdding(null);
+    void Haptics.selectionAsync();
+  };
+
   const select = (side: Side, rosterId: string) => {
     void Haptics.selectionAsync();
     setSelected((cur) => (cur?.side === side && cur.rosterId === rosterId ? null : { side, rosterId }));
@@ -191,6 +224,8 @@ export default function LiveScreen() {
     const out = p.status === 'fouledOut' || p.status === 'disqualified';
     const active = selected?.side === side && selected.rosterId === p.roster.id;
     const warn = p.status === 'warning';
+    const tracked = state[side].lineupTracked;
+    const benched = tracked && !p.onCourt && !out;
     return (
       <Pressable
         key={p.roster.id}
@@ -203,13 +238,16 @@ export default function LiveScreen() {
           styles.cell,
           { backgroundColor: sideBg(side), borderColor: sideBg(side) },
           warn && styles.cellWarn,
-          active && { backgroundColor: sideColor(side), borderColor: sideColor(side) },
+          tracked && p.onCourt && !out && !warn && { borderColor: sideColor(side) },
+          benched && styles.cellBenched,
+          active && { backgroundColor: sideColor(side), borderColor: sideColor(side), opacity: 1 },
           out && styles.cellOut,
         ]}
       >
         <Text
           style={[
             styles.number,
+            benched && styles.numberBenched,
             warn && { color: colors.danger },
             active && { color: colors.primaryText },
             out && { color: colors.disabled },
@@ -218,7 +256,10 @@ export default function LiveScreen() {
           {p.roster.number}
         </Text>
         {out ? (
-          <Text style={styles.outText}>{STATUS_TEXT[p.status as 'fouledOut' | 'disqualified']}</Text>
+          <Text style={[styles.outText, p.onCourt && { color: colors.danger }]}>
+            {STATUS_TEXT[p.status as 'fouledOut' | 'disqualified']}
+            {p.onCourt ? '・要交代' : ''}
+          </Text>
         ) : (
           p.fouls.total > 0 && (
             <Text
@@ -261,6 +302,19 @@ export default function LiveScreen() {
           )
         )}
       </Pressable>,
+      ...(team.players.length < RULES.maxRosterSize
+        ? [
+            <Pressable
+              key="add"
+              accessibilityRole="button"
+              accessibilityLabel={`${side} 背番号を追加`}
+              onPress={() => setAdding({ side, number: '' })}
+              style={[styles.cell, styles.addCell]}
+            >
+              <Text style={styles.addText}>＋番号</Text>
+            </Pressable>,
+          ]
+        : []),
     ];
     const rows = Array.from({ length: GRID_ROWS }, (_, r) =>
       cells.slice(r * GRID_COLUMNS, (r + 1) * GRID_COLUMNS),
@@ -276,6 +330,21 @@ export default function LiveScreen() {
               TF {team.teamFouls}
               {team.inBonus ? '　次からFT' : ''}
             </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${side} 交代`}
+              onPress={() =>
+                setSubSheet({
+                  side,
+                  court: team.players.filter((p) => p.onCourt).map((p) => p.roster.id),
+                  clock: '',
+                })
+              }
+              hitSlop={6}
+              style={styles.toButton}
+            >
+              <Text style={styles.toText}>交代</Text>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`${side} タイムアウト 残り${team.timeoutsRemaining}回`}
@@ -298,6 +367,15 @@ export default function LiveScreen() {
       </View>
     );
   };
+
+  // 残り時間の入力エラーはシート内に表示する（アラートは出さない）
+  const periodLength = periodSeconds(period, game);
+  const subClockError =
+    subSheet && parseClockDigits(subSheet.clock, periodLength) === undefined
+      ? Number(subSheet.clock.slice(-2)) >= 60
+        ? `秒は00〜59で入力してください（${clockDigitsLabel(subSheet.clock)} は入力できません）`
+        : `残り時間は ${clockDigitsLabel(String(periodLength / 60) + '00')} までです`
+      : null;
 
   const selectedLabel = selected
     ? `${selected.side} ${
@@ -461,6 +539,145 @@ export default function LiveScreen() {
         </Pressable>
       </Modal>
 
+      <Modal
+        visible={adding !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAdding(null)}
+        supportedOrientations={['landscape', 'portrait']}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setAdding(null)}>
+          <Pressable style={styles.padSheet} onPress={() => undefined}>
+            <Row>
+              <Text style={[styles.sheetTitle, styles.flex, adding && { color: sideColor(adding.side) }]} numberOfLines={1}>
+                {adding?.side} に背番号を追加
+              </Text>
+              <Text style={styles.padDisplay}>{adding?.number || '–'}</Text>
+            </Row>
+            <View style={styles.padGrid}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'].map((k) => (
+                <Pressable
+                  key={k}
+                  accessibilityRole="button"
+                  accessibilityLabel={k === '⌫' ? '1文字消す' : k}
+                  onPress={() =>
+                    setAdding((a) =>
+                      a
+                        ? { ...a, number: k === '⌫' ? a.number.slice(0, -1) : (a.number + k).slice(0, 2) }
+                        : a,
+                    )
+                  }
+                  style={({ pressed }) => [styles.padKey, pressed && styles.pressed]}
+                >
+                  <Text style={styles.padKeyText}>{k}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Row>
+              <Button title="キャンセル" variant="secondary" onPress={() => setAdding(null)} style={styles.flex} />
+              <Button title="追加" disabled={!adding?.number} onPress={addNumber} style={styles.flex} />
+            </Row>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={subSheet !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSubSheet(null)}
+        supportedOrientations={['landscape', 'portrait']}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setSubSheet(null)}>
+          {subSheet && (
+            <Pressable style={styles.subSheet} onPress={() => undefined}>
+              <Row>
+                <Text style={[styles.sheetTitle, styles.flex, { color: sideColor(subSheet.side) }]} numberOfLines={1}>
+                  {subSheet.side} の交代　コートに出る選手を選ぶ
+                </Text>
+                <Text
+                  style={[
+                    styles.subCount,
+                    subSheet.court.length > ON_COURT_MAX && { color: colors.danger },
+                  ]}
+                >
+                  {subSheet.court.length}/{ON_COURT_MAX}人
+                </Text>
+              </Row>
+              <View style={styles.padGrid}>
+                {state[subSheet.side].players.map((p) => {
+                  const on = subSheet.court.includes(p.roster.id);
+                  const out = p.status === 'fouledOut' || p.status === 'disqualified';
+                  return (
+                    <Chip
+                      key={p.roster.id}
+                      label={p.roster.number}
+                      active={on}
+                      disabled={out && !on}
+                      color={sideColor(subSheet.side)}
+                      onPress={() =>
+                        setSubSheet((cur) =>
+                          cur
+                            ? {
+                                ...cur,
+                                court: on
+                                  ? cur.court.filter((id) => id !== p.roster.id)
+                                  : [...cur.court, p.roster.id],
+                              }
+                            : cur,
+                        )
+                      }
+                    />
+                  );
+                })}
+              </View>
+              <Row>
+                <Text style={styles.sheetLabel}>残り</Text>
+                <Text style={styles.subClock}>{clockDigitsLabel(subSheet.clock)}</Text>
+                <View style={[styles.padGrid, styles.flex]}>
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'].map((k) => (
+                    <Pressable
+                      key={k}
+                      accessibilityRole="button"
+                      accessibilityLabel={k === '⌫' ? '1文字消す' : `残り時間 ${k}`}
+                      onPress={() =>
+                        setSubSheet((cur) =>
+                          cur
+                            ? {
+                                ...cur,
+                                clock: k === '⌫' ? cur.clock.slice(0, -1) : (cur.clock + k).slice(0, 4),
+                              }
+                            : cur,
+                        )
+                      }
+                      style={({ pressed }) => [styles.subKey, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.subKeyText}>{k}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </Row>
+              {subClockError ? (
+                <Text style={[styles.subHint, styles.subError]}>{subClockError}</Text>
+              ) : (
+                <Text style={styles.subHint}>
+                  残り時間は任意です（例：6分32秒 → 632）。入れると出場時間が正確になります。Qの切れ目の交代は入れなくても正確です。
+                </Text>
+              )}
+              <Row>
+                <Button title="キャンセル" variant="secondary" onPress={() => setSubSheet(null)} style={styles.flex} />
+                <Button
+                  title="交代を記録"
+                  disabled={subSheet.court.length > ON_COURT_MAX || subClockError !== null}
+                  onPress={confirmSub}
+                  style={styles.flex}
+                />
+              </Row>
+            </Pressable>
+          )}
+        </Pressable>
+      </Modal>
+
       <EventLogSheet visible={logOpen} bundle={bundle} onClose={() => setLogOpen(false)} onChanged={reload} />
     </SafeAreaView>
   );
@@ -565,4 +782,52 @@ const styles = StyleSheet.create({
   sheet: { width: 380, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 16, gap: 12 },
   sheetTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   sheetLabel: { width: 44, fontSize: 14, color: colors.sub },
+  cellBenched: { opacity: 0.45 },
+  numberBenched: { fontSize: 18, fontWeight: '600' },
+  subSheet: { width: 640, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 12, gap: 8 },
+  subCount: { fontSize: 16, fontWeight: '800', color: colors.text, fontVariant: ['tabular-nums'] },
+  subClock: {
+    width: 76,
+    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: '900',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  subKey: {
+    width: 38,
+    height: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  subKeyText: { fontSize: 18, fontWeight: '700', color: colors.text },
+  subHint: { fontSize: 11, color: colors.sub },
+  subError: { fontSize: 13, fontWeight: '700', color: colors.danger },
+  addCell: { backgroundColor: 'transparent', borderColor: colors.line, borderStyle: 'dashed' },
+  addText: { fontSize: 13, fontWeight: '700', color: colors.sub },
+  padSheet: { width: 440, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 14, gap: 10 },
+  padDisplay: {
+    minWidth: 64,
+    textAlign: 'center',
+    fontSize: 28,
+    fontWeight: '900',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  padGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  padKey: {
+    width: 62,
+    height: 52,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  padKeyText: { fontSize: 22, fontWeight: '700', color: colors.text },
 });

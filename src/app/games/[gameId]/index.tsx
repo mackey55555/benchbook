@@ -7,10 +7,12 @@ import { WebView } from 'react-native-webview';
 import { exportGame } from '@/db/backup';
 import { db } from '@/db/client';
 import { deleteGame, reopenGame } from '@/db/repo';
+import { computeLineupStats, formatClock } from '@/domain/lineup';
 import { RULES, activeEvents, computePeriodScores, computeScore, periodLabel } from '@/domain/rules';
 import { buildBoxScore, describeEvent, type BoxScoreLine } from '@/domain/stats';
 import type { Side } from '@/domain/types';
 import { shareImage, shareJson, sharePdf } from '@/lib/share';
+import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Button, Card, Chip, Row, Segmented } from '@/ui/components';
 import { EventLogSheet } from '@/ui/EventLogSheet';
@@ -50,6 +52,7 @@ export default function GameDetailScreen() {
   const promptedRef = useRef(false);
 
   const html = useMemo(() => (bundle ? buildRunningScoreHtml(bundle) : ''), [bundle]);
+  const boxHtml = useMemo(() => (bundle ? buildBoxScoreHtml(bundle) : ''), [bundle]);
   const baseName = bundle
     ? `${bundle.game.date}_${bundle.game.teamAName || 'A'}_vs_${bundle.game.teamBName || 'B'}`
     : 'benchbook';
@@ -95,12 +98,13 @@ export default function GameDetailScreen() {
     </ScrollView>
   );
 
-  const running = () => {
+  // A4のシート（HTML）を表示し、PDF・画像で共有する。ランニングスコアとボックススコアで共用
+  const sheet = (sheetHtml: string, name: string, withJson: boolean) => {
     const sheetWidth = width - 24;
     return (
-      <View style={styles.tabBody}>
+      <>
         <Row>
-          <Button title="PDF" small variant="secondary" disabled={busy} onPress={() => share(() => sharePdf(html, baseName))} />
+          <Button title="PDF" small variant="secondary" disabled={busy} onPress={() => share(() => sharePdf(sheetHtml, name))} />
           <Button
             title="画像"
             small
@@ -110,22 +114,39 @@ export default function GameDetailScreen() {
               share(async () => shareImage(await captureRef(sheetRef, { format: 'png', quality: 1 })))
             }
           />
-          <Button title="JSON" small variant="secondary" disabled={busy} onPress={shareBackup} />
+          {withJson && <Button title="JSON" small variant="secondary" disabled={busy} onPress={shareBackup} />}
         </Row>
         <View
           ref={sheetRef}
           collapsable={false}
           style={[styles.sheet, { width: sheetWidth, height: sheetWidth * A4_RATIO }]}
         >
-          <WebView originWhitelist={['*']} source={{ html }} style={styles.webview} scrollEnabled={false} />
+          <WebView originWhitelist={['*']} source={{ html: sheetHtml }} style={styles.webview} scrollEnabled={false} />
         </View>
         <Text style={styles.note}>拡大して見るときはPDFで共有してください</Text>
-      </View>
+      </>
     );
   };
 
+  const running = () => <View style={styles.tabBody}>{sheet(html, baseName, true)}</View>;
+
   const box = () => {
     const team = buildBoxScore(events, roster, filterPeriod)[boxSide];
+    // 出場時間と +/- は試合全体の値なので、Qで絞り込んでいないときだけ出す
+    const lineup =
+      filterPeriod === undefined
+        ? computeLineupStats(events, roster, { ...game, finished: game.status === 'finished' })
+        : null;
+    const lineupCells = (rosterId: string | null) => {
+      if (!lineup) return null;
+      const stat = rosterId ? lineup.get(rosterId) : undefined;
+      return (
+        <>
+          <Text style={styles.td}>{stat ? `${stat.approximate ? '約' : ''}${formatClock(stat.seconds)}` : ''}</Text>
+          <Text style={styles.td}>{stat ? `${stat.plusMinus > 0 ? '+' : ''}${stat.plusMinus}` : ''}</Text>
+        </>
+      );
+    };
     const line = (l: BoxScoreLine, isTotal = false) => (
       <View key={l.rosterId ?? 'total'} style={[styles.tr, isTotal && styles.trTotal]}>
         <Text style={[styles.td, styles.tdNo]}>{isTotal ? '' : l.number}</Text>
@@ -137,10 +158,13 @@ export default function GameDetailScreen() {
             {c.value(l)}
           </Text>
         ))}
+        {lineupCells(isTotal ? null : l.rosterId)}
       </View>
     );
     return (
       <View style={styles.tabBody}>
+        {sheet(boxHtml, `${baseName}_boxscore`, false)}
+        <Text style={styles.subTitle}>Q別に見る</Text>
         <Segmented
           options={[
             { value: 'A', label: `A ${game.teamAName}` },
@@ -160,6 +184,12 @@ export default function GameDetailScreen() {
                   {c.label}
                 </Text>
               ))}
+              {lineup && (
+                <>
+                  <Text style={[styles.td, styles.th]}>MIN</Text>
+                  <Text style={[styles.td, styles.th]}>+/-</Text>
+                </>
+              )}
             </View>
             {team.players.map((l) => line(l))}
             {line(team.total, true)}
@@ -257,7 +287,7 @@ export default function GameDetailScreen() {
     ]);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
       <Stack.Screen options={{ title: game.date }} />
       <View style={styles.header}>
         <Text style={styles.meta}>
@@ -321,6 +351,7 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
   webview: { flex: 1, backgroundColor: '#fff' },
   note: { fontSize: 12, color: colors.sub },
+  subTitle: { fontSize: 13, fontWeight: '700', color: colors.sub, marginTop: 8 },
   tr: {
     flexDirection: 'row',
     alignItems: 'center',

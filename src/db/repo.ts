@@ -12,6 +12,7 @@ import {
   type AfterPeriod,
 } from '@/domain/rules';
 import type { EventType, FoulKind, GameEvent, RosterEntry, Score, Side } from '@/domain/types';
+import { ON_COURT_MAX, onCourtIds, periodSeconds } from '@/domain/lineup';
 import { ulid } from '@/lib/ulid';
 
 import * as schema from './schema';
@@ -568,6 +569,7 @@ export function addEvent(db: Db, input: NewEvent): GameEvent {
       rosterId: input.rosterId,
       type: input.type,
       ...attrs,
+      clockSeconds: null,
       createdAt: Date.now(),
       voidedAt: null,
       replacesEventId: null,
@@ -614,6 +616,7 @@ export function replaceEvent(
       rosterId: merged.rosterId,
       type: merged.type,
       ...normalizeEvent(merged),
+      clockSeconds: original.clockSeconds,
       createdAt: now,
       voidedAt: null,
       replacesEventId: original.id,
@@ -642,8 +645,87 @@ export function undoLastEvent(db: Db, gameId: string, period: number): GameEvent
       .get();
     if (!last) return null;
     const voidedAt = Date.now();
-    tx.update(gameEvents).set({ voidedAt }).where(eq(gameEvents.id, last.id)).run();
+    if (last.type === 'SUB_IN' || last.type === 'SUB_OUT') {
+      // 1回の交代（同時に記録したIN/OUT）はまとめて取り消す
+      tx.update(gameEvents)
+        .set({ voidedAt })
+        .where(
+          and(
+            eq(gameEvents.gameId, gameId),
+            eq(gameEvents.createdAt, last.createdAt),
+            inArray(gameEvents.type, ['SUB_IN', 'SUB_OUT']),
+            isNull(gameEvents.voidedAt),
+          ),
+        )
+        .run();
+    } else {
+      tx.update(gameEvents).set({ voidedAt }).where(eq(gameEvents.id, last.id)).run();
+    }
     return { ...last, voidedAt };
+  });
+}
+
+export interface Substitution {
+  gameId: string;
+  period: number;
+  side: Side;
+  /** 交代後にコート上にいる選手（出場登録のID） */
+  onCourt: string[];
+  /** そのピリオドの残り時間（秒）。分からなければ null */
+  clockSeconds: number | null;
+}
+
+/**
+ * 交代を記録する。現在のコート上の選手との差分を SUB_OUT / SUB_IN として1トランザクションで書く。
+ * 変更がなければ何も書かず 0 を返す。
+ */
+export function substitute(db: Db, input: Substitution): number {
+  return db.transaction((tx) => {
+    const game = tx.select().from(games).where(eq(games.id, input.gameId)).get();
+    if (!game) throw new RepoError('試合が見つかりません');
+    const roster = listRoster(tx, input.gameId).filter((r) => r.side === input.side);
+    const next = new Set(input.onCourt);
+    if (next.size > ON_COURT_MAX) throw new RepoError(`コート上は${ON_COURT_MAX}人までです`);
+    for (const id of next) {
+      if (!roster.some((r) => r.id === id)) throw new RepoError('出場登録にない選手です');
+    }
+    if (input.clockSeconds !== null) {
+      const max = periodSeconds(input.period, game);
+      if (!Number.isInteger(input.clockSeconds) || input.clockSeconds < 0 || input.clockSeconds > max) {
+        throw new RepoError('残り時間が正しくありません');
+      }
+    }
+    const current = onCourtIds(listEvents(tx, input.gameId), listRoster(tx, input.gameId), input.side);
+    const outs = [...current].filter((id) => !next.has(id));
+    const ins = [...next].filter((id) => !current.has(id));
+    // 同じ createdAt を持たせて「1回の交代」として扱う（UNDOでまとめて取り消す）
+    const now = Date.now();
+    let orderKey = nextOrderKey(tx, input.gameId);
+    for (const [type, ids] of [
+      ['SUB_OUT', outs],
+      ['SUB_IN', ins],
+    ] as const) {
+      for (const rosterId of ids) {
+        tx.insert(gameEvents)
+          .values({
+            id: ulid(),
+            gameId: input.gameId,
+            orderKey: orderKey++,
+            period: input.period,
+            side: input.side,
+            rosterId,
+            type,
+            foulKind: null,
+            ftAwarded: null,
+            clockSeconds: input.clockSeconds,
+            createdAt: now,
+            voidedAt: null,
+            replacesEventId: null,
+          })
+          .run();
+      }
+    }
+    return outs.length + ins.length;
   });
 }
 
