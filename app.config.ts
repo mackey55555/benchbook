@@ -4,7 +4,7 @@ import type { ExpoConfig } from 'expo/config';
  * EASプロジェクトID。`eas init` 実行後に表示されるIDをここに貼る。
  * 空のままだと EAS Update のURLが設定されず、OTAは無効になる（ローカル開発は可能）。
  */
-const EAS_PROJECT_ID = '';
+const EAS_PROJECT_ID = '2642f196-97ed-456b-a675-797478cb9ea3';
 
 const config: ExpoConfig = {
   name: 'Benchbook',
