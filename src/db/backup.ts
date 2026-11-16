@@ -1,4 +1,6 @@
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, ne } from 'drizzle-orm';
+
+import { PRACTICE_GAME_ID } from '@/domain/practice';
 
 import { RepoError, type Db } from './repo';
 import * as schema from './schema';
@@ -117,11 +119,12 @@ export function exportAll(db: Db): BackupData {
     ...envelope('all'),
     teams: db.select().from(teams).all(),
     players: db.select().from(players).all(),
-    games: db.select().from(games).all(),
-    gameRoster: db.select().from(gameRoster).all(),
-    gameStaff: db.select().from(gameStaff).all(),
-    gameEvents: db.select().from(gameEvents).all(),
-    periodChecks: db.select().from(periodChecks).all(),
+    // 練習用の試合は書き出さない
+    games: db.select().from(games).where(ne(games.id, PRACTICE_GAME_ID)).all(),
+    gameRoster: db.select().from(gameRoster).where(ne(gameRoster.gameId, PRACTICE_GAME_ID)).all(),
+    gameStaff: db.select().from(gameStaff).where(ne(gameStaff.gameId, PRACTICE_GAME_ID)).all(),
+    gameEvents: db.select().from(gameEvents).where(ne(gameEvents.gameId, PRACTICE_GAME_ID)).all(),
+    periodChecks: db.select().from(periodChecks).where(ne(periodChecks.gameId, PRACTICE_GAME_ID)).all(),
   };
 }
 

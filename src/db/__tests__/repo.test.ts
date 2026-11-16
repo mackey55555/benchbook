@@ -15,6 +15,8 @@ import {
   cancelPeriodEnd,
   confirmPeriod,
   createGame,
+  createPracticeGame,
+  deletePracticeGame,
   createTeam,
   deleteGame,
   endPeriod,
@@ -42,6 +44,7 @@ import {
   voidEvent,
   type Db,
 } from '../repo';
+import { exportAll } from '../backup';
 import { openTestDb } from './testDb';
 
 function setupGame(db: Db) {
@@ -550,5 +553,32 @@ describe('選手別の修正表（adjustStat）', () => {
     ]);
     adjustStat(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FOUL', delta: -1 });
     expect(active().map((e) => e.foulKind)).toEqual(['P']);
+  });
+});
+
+describe('練習用の試合', () => {
+  it('入力できる状態で作られ、一覧・再開・バックアップの対象にならない', () => {
+    const { db } = openTestDb();
+    const practice = createPracticeGame(db);
+    expect(practice.status).toBe('live');
+    expect(listRoster(db, practice.id).map((r) => `${r.side}${r.number}`)).toHaveLength(10);
+    expect(listGames(db)).toHaveLength(0);
+    expect(getLiveGame(db)).toBeUndefined();
+    expect(exportAll(db).games).toHaveLength(0);
+    expect(exportAll(db).gameRoster).toHaveLength(0);
+  });
+
+  it('練習中でも本番の試合を始められ、作り直すと前の練習の記録は消える', () => {
+    const { db } = openTestDb();
+    const practice = createPracticeGame(db);
+    const a4 = listRoster(db, practice.id).find((r) => r.side === 'A' && r.number === '4')!;
+    addEvent(db, { gameId: practice.id, period: 1, side: 'A', rosterId: a4.id, type: 'FG2_MADE' });
+    const { game } = setupGame(db);
+    expect(getLiveGame(db)?.id).toBe(game.id);
+    createPracticeGame(db);
+    expect(listEvents(db, practice.id)).toHaveLength(0);
+    deletePracticeGame(db);
+    expect(getGame(db, practice.id)).toBeUndefined();
+    expect(getGame(db, game.id)).toBeDefined();
   });
 });
