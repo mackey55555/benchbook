@@ -37,14 +37,18 @@ function newShareDirectory(): Directory {
  * `File.exists` は日本語を含む名前で正しく判定できないことがあるため、事前の確認には使わない。
  * すべて失敗したときは、原因を調べられるよう候補ごとの状況をエラーに含める。
  */
-async function shareFirst(candidates: File[], options: Sharing.SharingOptions): Promise<void> {
+async function shareFirst(candidates: (File | (() => File))[], options: Sharing.SharingOptions): Promise<void> {
   const failures: string[] = [];
-  for (const file of candidates) {
+  for (const candidate of candidates) {
+    let label = '';
     try {
+      // 関数で渡された候補は、順番が来たときに初めて用意する（名前の付け替えなど）
+      const file = typeof candidate === 'function' ? candidate() : candidate;
+      label = file.name;
       await Sharing.shareAsync(encodeURI(decodeURI(file.uri)), options);
       return;
     } catch (e) {
-      failures.push(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
+      failures.push(`${label || '準備'}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   throw new Error(`共有シートに渡せませんでした（${failures.join(' ／ ')}）`);
@@ -59,6 +63,21 @@ function copyInto(dir: Directory, source: File, name: string): File | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * ファイルの名前を、その場で付け替える。同じ名前の古いファイルが残っていれば先に消す。
+ * 写しを渡せない端末（iPhoneで確認）でも、書き出されたファイル自体は渡せるので、名前だけ整える。
+ */
+function renamed(file: File, name: string): File {
+  if (file.name === name) return file;
+  try {
+    new File(file.parentDirectory, name).delete();
+  } catch {
+    // 無ければ何もしない
+  }
+  file.rename(name);
+  return file;
 }
 
 /** JSONを共有シートに渡す */
@@ -83,10 +102,15 @@ export async function sharePdf(html: string, baseName: string): Promise<void> {
   const dir = newShareDirectory();
   const named = copyInto(dir, original, `${safeName(baseName)}.pdf`);
   const plain = copyInto(dir, original, 'benchbook.pdf');
-  await shareFirst([named, plain, original].filter((f): f is File => f !== null), {
-    mimeType: 'application/pdf',
-    UTI: 'com.adobe.pdf',
-  });
+  await shareFirst(
+    [
+      ...[named, plain].filter((f): f is File => f !== null),
+      () => renamed(original, `${safeName(baseName)}.pdf`),
+      () => renamed(original, 'benchbook.pdf'),
+      original,
+    ],
+    { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' },
+  );
 }
 
 export async function shareImage(uri: string): Promise<void> {

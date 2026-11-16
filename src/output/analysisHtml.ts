@@ -1,10 +1,13 @@
 import {
   STAT_COLUMNS,
+  TEAM_STAT_COLUMNS,
   formatStat,
+  pct,
   perGame,
   statColumn,
   statValue,
   type PlayerAnalysis,
+  type StatLine,
   type StatColumn,
   type StatMode,
   type TeamAnalysis,
@@ -27,37 +30,40 @@ const MODE_LABEL: Record<StatMode, string> = { avg: '1試合平均', total: '合
 
 const CSS = `
 @page { size: A4 portrait; margin: 8mm; }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 html, body { margin: 0; padding: 0; background: #fff; }
 body { font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; color: #16203a; font-size: 9pt; }
 .sheet { width: 194mm; margin: 0 auto; }
 .sheet + .sheet { page-break-before: always; }
-tr { page-break-inside: avoid; }
+tr, .box, .tile { page-break-inside: avoid; }
 @media screen { .sheet { padding: 4mm 0; } }
-.head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 0.6mm solid #16203a; padding-bottom: 2mm; }
+.head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 0.8mm solid #16203a; padding-bottom: 2mm; }
 h1 { font-size: 16pt; margin: 0; }
 .sub { font-size: 9pt; color: #5a6478; text-align: right; }
-h2 { font-size: 10.5pt; margin: 5mm 0 1.5mm; }
+h2 { font-size: 10.5pt; margin: 5mm 0 1.5mm; padding-left: 2mm; border-left: 1.2mm solid #ff7a2f; line-height: 1.3; }
 .tiles { display: flex; gap: 3mm; margin-top: 4mm; }
-.tile { flex: 1; border: 0.3mm solid #dde2ea; border-radius: 2mm; padding: 2mm 3mm; }
+.tile { flex: 1; border: 0.3mm solid #aab2c0; border-radius: 2mm; padding: 2mm 3mm; }
 .tile .l { font-size: 8pt; color: #5a6478; }
 .tile .v { font-size: 17pt; font-weight: 700; }
 .tile .s { font-size: 8pt; color: #5a6478; }
 table { width: 100%; border-collapse: collapse; }
-th, td { border-bottom: 0.2mm solid #dde2ea; padding: 1mm 0.8mm; text-align: right; white-space: nowrap; }
-th { font-size: 7.5pt; color: #5a6478; background: #f2f4f8; font-weight: 700; }
+th, td { border: 0.2mm solid #aab2c0; padding: 1mm 1.2mm; text-align: right; white-space: nowrap; }
+th { font-size: 7.5pt; color: #16203a; background: #e3e7ee; font-weight: 700; }
+table.wide th, table.wide td { padding: 1mm 0.7mm; font-size: 8pt; }
+table.wide th { font-size: 7pt; }
+tbody tr:nth-child(even) td { background: #f5f7fa; }
 td.l, th.l { text-align: left; }
+td.c, th.c { text-align: center; }
 td.b { font-weight: 700; }
 th.sort { background: #16203a; color: #fff; }
-.cols { display: flex; gap: 6mm; }
-.cols > div { flex: 1; }
-.chart { display: flex; align-items: flex-end; gap: 1.5mm; height: 34mm; border-bottom: 0.3mm solid #aab2c0; }
-.g { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 0.5mm; height: 100%; }
-.bar { width: 3.2mm; border-radius: 1mm 1mm 0 0; }
-.labels { display: flex; gap: 1.5mm; }
-.labels div { flex: 1; text-align: center; font-size: 6.5pt; color: #5a6478; }
-.legend { font-size: 8pt; color: #5a6478; }
-.sw { display: inline-block; width: 2.4mm; height: 2.4mm; border-radius: 0.6mm; margin: 0 1mm 0 3mm; }
+td.sortv { font-weight: 700; background: #ffe8d9 !important; }
+tr.total td { font-weight: 700; background: #e3e7ee !important; border-top: 0.5mm solid #16203a; }
+.cols { display: flex; gap: 5mm; }
+.cols > div { flex: 1; min-width: 0; }
+.box { border: 0.3mm solid #aab2c0; border-radius: 2mm; padding: 2mm 3mm; }
+.box svg { display: block; width: 100%; height: auto; }
+.legend { font-size: 8pt; color: #5a6478; font-weight: 400; }
+.sw { display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: 0.6mm; margin: 0 1mm 0 3mm; vertical-align: -0.3mm; }
 .hero { display: flex; align-items: center; gap: 5mm; margin-top: 4mm; }
 .hero .no { font-size: 34pt; font-weight: 800; line-height: 1; }
 .hero .name { font-size: 15pt; font-weight: 700; }
@@ -92,18 +98,146 @@ function page(title: string, sheets: Sheet[]): string {
 const shortDate = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 const one = (v: number) => v.toFixed(1);
 
-function bars(groups: { label: string; own: number; opp?: number }[]): string {
-  const max = Math.max(1, ...groups.flatMap((g) => [g.own, g.opp ?? 0]));
-  const bar = (v: number, color: string) =>
-    `<div class="bar" style="height:${((v / max) * 100).toFixed(1)}%;background:${color}"></div>`;
-  return `<div class="chart">${groups
-    .map((g) => `<div class="g">${bar(g.own, OWN)}${g.opp !== undefined ? bar(g.opp, OPP) : ''}</div>`)
-    .join('')}</div><div class="labels">${groups.map((g) => `<div>${esc(g.label)}</div>`).join('')}</div>`;
+const GRID = '#dde2ea';
+const AXIS = '#8e97a8';
+const INKC = '#16203a';
+const SUBC = '#5a6478';
+
+/** 軸の上限を、きりのよい数に切り上げる */
+function niceMax(value: number): number {
+  if (value <= 0) return 10;
+  const base = 10 ** Math.floor(Math.log10(value));
+  for (const step of [1, 2, 2.5, 5, 10]) if (step * base >= value) return step * base;
+  return 10 * base;
+}
+
+interface BarGroup {
+  label: string;
+  own: number;
+  /** 省くと自チームだけの1系列になる */
+  opp?: number;
+}
+
+/**
+ * 縦棒グラフ（SVG）。印刷では背景色が出ないことがあるため、棒は図形として描く。
+ * 軸は0から始め、目盛り線と、棒の上の数値を出す。
+ */
+function barChart(groups: BarGroup[], o: { width?: number; height?: number; format?: (v: number) => string } = {}): string {
+  const { width = 720, height = 220, format = (v: number) => String(v) } = o;
+  const left = 34;
+  const top = 16;
+  const bottom = 22;
+  const plotW = width - left - 6;
+  const plotH = height - top - bottom;
+  const max = niceMax(Math.max(1, ...groups.flatMap((g) => [g.own, g.opp ?? 0])));
+  const y = (v: number) => top + plotH - (v / max) * plotH;
+  const ticks = [0, max / 2, max];
+  const slot = plotW / Math.max(1, groups.length);
+  const two = groups.some((g) => g.opp !== undefined);
+  const barW = Math.min(26, (slot * 0.72) / (two ? 2 : 1));
+  const showValues = slot >= (two ? 44 : 24);
+  const fontSize = slot >= 60 ? 11 : 9;
+  const labelEvery = slot >= 32 ? 1 : slot >= 16 ? 2 : 3;
+  const bar = (x: number, v: number, color: string) => {
+    const h = Math.max(v > 0 ? 1.5 : 0, (v / max) * plotH);
+    const value = showValues
+      ? `<text x="${(x + barW / 2).toFixed(1)}" y="${(y(v) - 3).toFixed(1)}" font-size="${fontSize}" font-weight="700" fill="${INKC}" text-anchor="middle">${format(v)}</text>`
+      : '';
+    return `<rect x="${x.toFixed(1)}" y="${(top + plotH - h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}"/>${value}`;
+  };
+  const grid = ticks
+    .map(
+      (t) =>
+        `<line x1="${left}" x2="${width - 6}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="${t === 0 ? AXIS : GRID}" stroke-width="${t === 0 ? 1.2 : 1}"/>` +
+        `<text x="${left - 5}" y="${(y(t) + 3.5).toFixed(1)}" font-size="10" fill="${SUBC}" text-anchor="end">${format(t)}</text>`,
+    )
+    .join('');
+  const marks = groups
+    .map((g, i) => {
+      const cx = left + slot * i + slot / 2;
+      const gap = two ? 2 : 0;
+      const x0 = two ? cx - barW - gap / 2 : cx - barW / 2;
+      return (
+        bar(x0, g.own, OWN) +
+        (g.opp !== undefined ? bar(x0 + barW + gap, g.opp, OPP) : '') +
+        // 幅が足りないときは、ラベルを1つおきに出して重なりを避ける
+        (labelEvery === 1 || i % labelEvery === 0
+          ? `<text x="${cx.toFixed(1)}" y="${height - 6}" font-size="10" fill="${SUBC}" text-anchor="middle">${esc(g.label)}</text>`
+          : '')
+      );
+    })
+    .join('');
+  return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img">${grid}${marks}</svg>`;
+}
+
+interface RateRow {
+  label: string;
+  own: number | null;
+  ownText: string;
+  opp?: number | null;
+  oppText?: string;
+}
+
+/** 成功率などの横棒（0〜100%）。自チームと相手を上下に並べる */
+function rateChart(rows: RateRow[], width = 720): string {
+  const left = 96;
+  const right = 150;
+  const trackW = width - left - right;
+  const rowH = rows.some((r) => r.opp !== undefined) ? 44 : 28;
+  const height = rows.length * rowH + 4;
+  const line = (yy: number, v: number | null, text: string, color: string) =>
+    `<rect x="${left}" y="${yy}" width="${trackW}" height="12" rx="3" fill="#e3e7ee"/>` +
+    (v !== null && v > 0 ? `<rect x="${left}" y="${yy}" width="${((Math.min(100, v) / 100) * trackW).toFixed(1)}" height="12" rx="3" fill="${color}"/>` : '') +
+    `<text x="${left + trackW + 8}" y="${yy + 10.5}" font-size="11" font-weight="700" fill="${INKC}">${esc(text)}</text>`;
+  const body = rows
+    .map((r, i) => {
+      const y0 = i * rowH + 6;
+      return (
+        `<text x="0" y="${y0 + 11}" font-size="12" font-weight="700" fill="${INKC}">${esc(r.label)}</text>` +
+        line(y0, r.own, r.ownText, OWN) +
+        (r.opp !== undefined ? line(y0 + 16, r.opp, r.oppText ?? '', OPP) : '')
+      );
+    })
+    .join('');
+  return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img">${body}</svg>`;
+}
+
+/** 項目の多い順の横棒（選手の比較用） */
+function rankChart(rows: { label: string; value: number; text: string }[], width = 720): string {
+  const left = 150;
+  const right = 60;
+  const trackW = width - left - right;
+  const rowH = 20;
+  const max = Math.max(0.0001, ...rows.map((r) => r.value));
+  const body = rows
+    .map((r, i) => {
+      const y0 = i * rowH + 4;
+      const w = (Math.max(0, r.value) / max) * trackW;
+      return (
+        `<text x="${left - 8}" y="${y0 + 11}" font-size="11" fill="${INKC}" text-anchor="end">${esc(r.label)}</text>` +
+        `<rect x="${left}" y="${y0}" width="${trackW}" height="13" rx="3" fill="#eef1f5"/>` +
+        (w > 0 ? `<rect x="${left}" y="${y0}" width="${w.toFixed(1)}" height="13" rx="3" fill="${OWN}"/>` : '') +
+        `<text x="${left + trackW + 8}" y="${y0 + 11}" font-size="11" font-weight="700" fill="${INKC}">${esc(r.text)}</text>`
+      );
+    })
+    .join('');
+  return `<svg viewBox="0 0 ${width} ${rows.length * rowH + 6}" xmlns="http://www.w3.org/2000/svg" role="img">${body}</svg>`;
 }
 
 const LEGEND = `<span class="legend"><span class="sw" style="background:${OWN}"></span>自チーム<span class="sw" style="background:${OPP}"></span>相手</span>`;
 
-function cell(c: StatColumn, line: BoxScoreLine, games: number, mode: StatMode): string {
+const SHOT_ROWS = [
+  { label: '2点', made: 'fg2m', att: 'fg2a' },
+  { label: '3点', made: 'fg3m', att: 'fg3a' },
+  { label: 'フリースロー', made: 'ftm', att: 'fta' },
+] as const;
+
+function rateText(line: BoxScoreLine, made: 'fg2m' | 'fg3m' | 'ftm', att: 'fg2a' | 'fg3a' | 'fta'): string {
+  const p = pct(line[made], line[att]);
+  return `${p === null ? '-' : `${Math.round(p)}%`}（${line[made]}/${line[att]}本）`;
+}
+
+function cell(c: StatColumn, line: StatLine, games: number, mode: StatMode): string {
   return formatStat(c, statValue(c, line, games, mode), mode);
 }
 
@@ -125,37 +259,51 @@ function teamSheet(a: TeamAnalysis, o: ReportOptions): Sheet {
   const avgAgainst = perGame(a.opp.pts, n);
   const diff = avgFor - avgAgainst;
   const trend = a.trend.slice(-20);
-  const half = Math.ceil(STAT_COLUMNS.length / 2);
+  const half = Math.ceil(TEAM_STAT_COLUMNS.length / 2);
   const statTable = (cols: readonly StatColumn[]) =>
-    `<table><tr><th class="l">項目</th><th>自チーム</th><th>相手</th></tr>${cols
+    `<table><thead><tr><th class="l">項目</th><th>自チーム</th><th>相手</th></tr></thead><tbody>${cols
       .map((c) => `<tr><td class="l">${esc(c.name)}</td><td class="b">${cell(c, a.own, n, o.mode)}</td><td>${cell(c, a.opp, n, o.mode)}</td></tr>`)
-      .join('')}</table>`;
+      .join('')}</tbody></table>`;
+  const keys = ['reb', 'ast', 'stl', 'blk', 'tov', 'pf'];
   const body = `
 <div class="tiles">
 <div class="tile"><div class="l">戦績</div><div class="v">${a.wins}勝 ${a.losses}敗${a.draws > 0 ? ` ${a.draws}分` : ''}</div><div class="s">${n}試合</div></div>
 <div class="tile"><div class="l">平均得点</div><div class="v">${one(avgFor)}</div><div class="s">失点 ${one(avgAgainst)}</div></div>
 <div class="tile"><div class="l">得失点差</div><div class="v">${diff > 0 ? '+' : ''}${one(diff)}</div><div class="s">1試合あたり</div></div>
 </div>
-<h2>得点の推移（${trend.length < n ? `直近${trend.length}試合` : `全${n}試合`}）${LEGEND}</h2>
-${bars(trend.map((t) => ({ label: shortDate(t.date), own: t.own, opp: t.opp })))}
+<h2>得点の推移（${trend.length < n ? `直近${trend.length}試合` : `全${n}試合`}・古い順）${LEGEND}</h2>
+<div class="box">${barChart(trend.map((t) => ({ label: shortDate(t.date), own: t.own, opp: t.opp })))}</div>
 <div class="cols"><div>
-<h2>Q別の平均得点</h2>
-<table><tr><th class="l"></th>${a.periods.map((p) => `<th>${periodLabel(p.period)}</th>`).join('')}</tr>
-<tr><td class="l">自チーム</td>${a.periods.map((p) => `<td class="b">${one(p.own)}</td>`).join('')}</tr>
-<tr><td class="l">相手</td>${a.periods.map((p) => `<td>${one(p.opp)}</td>`).join('')}</tr></table>
-</div><div></div></div>
+<h2>Q別の平均得点${LEGEND}</h2>
+<div class="box">${barChart(
+    a.periods.map((p) => ({ label: periodLabel(p.period), own: Math.round(p.own * 10) / 10, opp: Math.round(p.opp * 10) / 10 })),
+    { width: 350, height: 200, format: (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)) },
+  )}</div>
+</div><div>
+<h2>シュート成功率${LEGEND}</h2>
+<div class="box">${rateChart(
+    SHOT_ROWS.map((r) => ({
+      label: r.label,
+      own: pct(a.own[r.made], a.own[r.att]),
+      ownText: rateText(a.own, r.made, r.att),
+      opp: pct(a.opp[r.made], a.opp[r.att]),
+      oppText: rateText(a.opp, r.made, r.att),
+    })),
+    350,
+  )}</div>
+</div></div>
 <h2>全項目（${MODE_LABEL[o.mode]}）</h2>
-<div class="cols"><div>${statTable(STAT_COLUMNS.slice(0, half))}</div><div>${statTable(STAT_COLUMNS.slice(half))}</div></div>
-<h2>試合一覧</h2>
-<table><tr><th class="l">日付</th><th class="l">相手</th><th>結果</th><th>得点</th><th>失点</th>${['reb', 'ast', 'stl', 'blk', 'tov', 'pf'].map((k) => `<th>${statColumn(k).label}</th>`).join('')}</tr>
+<div class="cols"><div>${statTable(TEAM_STAT_COLUMNS.slice(0, half))}</div><div>${statTable(TEAM_STAT_COLUMNS.slice(half))}</div></div>
+<h2>試合一覧（新しい順）</h2>
+<table><thead><tr><th class="l">日付</th><th class="l">相手</th><th class="c">結果</th><th>得点</th><th>失点</th>${keys.map((k) => `<th>${statColumn(k).label}</th>`).join('')}</tr></thead><tbody>
 ${[...a.trend]
   .reverse()
   .map(
     (t) =>
-      `<tr><td class="l">${esc(t.date)}</td><td class="l">${esc(t.opponent)}</td><td>${RESULT[t.result]}</td><td class="b">${t.own}</td><td>${t.opp}</td>${['reb', 'ast', 'stl', 'blk', 'tov', 'pf'].map((k) => `<td>${statColumn(k).get(t.ownLine)}</td>`).join('')}</tr>`,
+      `<tr><td class="l">${esc(t.date)}</td><td class="l">${esc(t.opponent)}</td><td class="c">${RESULT[t.result]}</td><td class="b">${t.own}</td><td>${t.opp}</td>${keys.map((k) => `<td>${statColumn(k).get(t.ownLine)}</td>`).join('')}</tr>`,
   )
   .join('')}
-</table>`;
+</tbody></table>`;
   return { title: `${a.teamName || '自チーム'} チーム成績`, sub: `${esc(o.rangeLabel)}・${n}試合`, body };
 }
 
@@ -174,18 +322,28 @@ function sortedPlayers(a: TeamAnalysis, o: ReportOptions & { sortKey: string }):
 function playersSheet(a: TeamAnalysis, o: ReportOptions & { sortKey: string }): Sheet {
   const sortCol = statColumn(o.sortKey);
   const players = sortedPlayers(a, o);
+  const ranked = players
+    .map((p) => ({ p, v: statValue(sortCol, p.line, p.games, o.mode) }))
+    .filter((r) => r.v !== null && r.v > 0)
+    .slice(0, 12);
   const body = `
+<h2>${esc(sortCol.name)}の多い順（${MODE_LABEL[o.mode]}）</h2>
+<div class="box">${
+    ranked.length > 0
+      ? rankChart(ranked.map((r) => ({ label: `#${r.p.number} ${r.p.name}`.trim(), value: r.v ?? 0, text: formatStat(sortCol, r.v, o.mode) })))
+      : '<div class="legend">記録がありません</div>'
+  }</div>
 <h2>選手別（${MODE_LABEL[o.mode]}・${esc(sortCol.name)}の多い順）</h2>
-<table><tr><th>#</th><th class="l">選手</th><th>試合</th>${STAT_COLUMNS.map((c) => `<th class="${c.key === sortCol.key ? 'sort' : ''}">${c.label}</th>`).join('')}</tr>
+<table class="wide"><thead><tr><th class="c">#</th><th class="l">選手</th><th>試合</th>${STAT_COLUMNS.map((c) => `<th class="${c.key === sortCol.key ? 'sort' : ''}">${c.label}</th>`).join('')}</tr></thead><tbody>
 ${players
   .map(
     (p) =>
-      `<tr><td class="b">${esc(p.number)}</td><td class="l">${esc(p.name)}</td><td>${p.games}</td>${STAT_COLUMNS.map((c) => `<td class="${c.key === sortCol.key ? 'b' : ''}">${cell(c, p.line, p.games, o.mode)}</td>`).join('')}</tr>`,
+      `<tr><td class="b">${esc(p.number)}</td><td class="l">${esc(p.name)}</td><td>${p.games}</td>${STAT_COLUMNS.map((c) => `<td class="${c.key === sortCol.key ? 'sortv' : ''}">${cell(c, p.line, p.games, o.mode)}</td>`).join('')}</tr>`,
   )
   .join('')}
-<tr><td></td><td class="l b">チーム</td><td>${a.games}</td>${STAT_COLUMNS.map((c) => `<td class="b">${cell(c, a.own, a.games, o.mode)}</td>`).join('')}</tr>
-</table>
-<div class="foot">試合数は出場登録された試合の数です。${STAT_COLUMNS.filter((c) => c.kind === 'count')
+<tr class="total"><td></td><td class="l">チーム</td><td>${a.games}</td>${STAT_COLUMNS.map((c) => `<td>${cell(c, a.own, a.games, o.mode)}</td>`).join('')}</tr>
+</tbody></table>
+<div class="foot">試合数は出場登録された試合の数です。MIN（出場時間）と +/-（出場中の得失点差）は、先発と交代を記録した試合の分だけを集計しています。${STAT_COLUMNS.filter((c) => c.kind === 'count')
     .map((c) => `${c.label}：${c.name}`)
     .join('　')}</div>`;
   return { title: `${a.teamName || '自チーム'} 選手成績`, sub: `${esc(o.rangeLabel)}・${a.games}試合`, body };
@@ -198,7 +356,7 @@ export function buildPlayerReportHtml(p: PlayerAnalysis, o: { rangeLabel: string
 }
 
 function playerSheet(p: PlayerAnalysis, o: { rangeLabel: string; teamName: string }): Sheet {
-  const counts = STAT_COLUMNS.filter((c) => c.kind === 'count');
+  const counts = STAT_COLUMNS.filter((c) => c.kind !== 'pct');
   const trend = p.log.slice(-20);
   const row = (label: string, mode: StatMode) =>
     `<tr><td class="l b">${label}</td>${STAT_COLUMNS.map((c) => `<td>${cell(c, p.line, p.games, mode)}</td>`).join('')}</tr>`;
@@ -208,25 +366,33 @@ function playerSheet(p: PlayerAnalysis, o: { rangeLabel: string; teamName: strin
 ${['pts', 'reb', 'ast']
   .map((k) => {
     const c = statColumn(k);
-    return `<div class="tile"><div class="l">${esc(c.name)}</div><div class="v">${one(perGame(c.get(p.line) ?? 0, p.games))}</div><div class="s">計 ${c.get(p.line)}</div></div>`;
+    return `<div class="tile"><div class="l">${esc(c.name)}（1試合平均）</div><div class="v">${one(perGame(c.get(p.line) ?? 0, p.games))}</div><div class="s">合計 ${c.get(p.line)}</div></div>`;
   })
   .join('')}
 </div>
+<div class="cols"><div>
+<h2>得点の推移（${trend.length < p.games ? `直近${trend.length}試合` : `全${p.games}試合`}・古い順）</h2>
+<div class="box">${barChart(trend.map((t) => ({ label: shortDate(t.date), own: t.line.pts })), { width: 350, height: 200 })}</div>
+</div><div>
+<h2>シュート成功率</h2>
+<div class="box">${rateChart(
+    SHOT_ROWS.map((r) => ({ label: r.label, own: pct(p.line[r.made], p.line[r.att]), ownText: rateText(p.line, r.made, r.att) })),
+    350,
+  )}</div>
+</div></div>
 <h2>成績</h2>
-<table><tr><th class="l"></th>${STAT_COLUMNS.map((c) => `<th>${c.label}</th>`).join('')}</tr>
-${row('合計', 'total')}${row('平均', 'avg')}</table>
-<h2>得点の推移（${trend.length < p.games ? `直近${trend.length}試合` : `全${p.games}試合`}）</h2>
-${bars(trend.map((t) => ({ label: shortDate(t.date), own: t.line.pts })))}
-<h2>試合ごとの成績</h2>
-<table><tr><th class="l">日付</th><th class="l">相手</th><th>結果</th>${counts.map((c) => `<th>${c.label}</th>`).join('')}</tr>
+<table class="wide"><thead><tr><th class="l"></th>${STAT_COLUMNS.map((c) => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>
+${row('合計', 'total')}${row('平均', 'avg')}</tbody></table>
+<h2>試合ごとの成績（新しい順）</h2>
+<table class="wide"><thead><tr><th class="l">日付</th><th class="l">相手</th><th class="c">結果</th>${counts.map((c) => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>
 ${[...p.log]
   .reverse()
   .map(
     (g) =>
-      `<tr><td class="l">${esc(g.date)}</td><td class="l">${esc(g.opponent)}</td><td>${RESULT[g.result]}</td>${counts.map((c) => `<td class="${c.key === 'pts' ? 'b' : ''}">${c.get(g.line)}</td>`).join('')}</tr>`,
+      `<tr><td class="l">${esc(g.date)}</td><td class="l">${esc(g.opponent)}</td><td class="c">${RESULT[g.result]}</td>${counts.map((c) => `<td class="${c.key === 'pts' ? 'b' : ''}">${formatStat(c, c.get(g.line), 'total')}</td>`).join('')}</tr>`,
   )
   .join('')}
-</table>`;
+</tbody></table>`;
   return { title: `#${p.number} ${p.name} 選手成績`.replace(/\s+/g, ' '), sub: esc(o.rangeLabel), body };
 }
 

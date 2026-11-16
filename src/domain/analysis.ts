@@ -1,3 +1,4 @@
+import { computeLineupStats, formatClock } from './lineup';
 import { RULES, computeScore } from './rules';
 import { buildBoxScore, type BoxScoreLine } from './stats';
 import type { GameEvent, GameStatus, RosterEntry, Score, Side } from './types';
@@ -82,8 +83,31 @@ export function filterGames<T extends FilterableGame>(rows: readonly T[], filter
 
 // ---------------------------------------------------------------- チーム分析
 
+/**
+ * 分析で扱う1行。ボックススコアの項目に、出場時間と +/- を足したもの。
+ * 出場時間と +/- は、先発と交代を記録した試合の分だけが入る（lineupGames がその試合数）。
+ * チーム合計の行には入らない。
+ */
+export interface StatLine extends BoxScoreLine {
+  seconds?: number;
+  plusMinus?: number;
+  lineupGames?: number;
+  /** 時刻なしの交代を含み、出場時間が概算になっている */
+  approximate?: boolean;
+}
+
 export interface AnalysisGame {
-  game: { id: string; date: string; ownSide: Side; teamAName: string; teamBName: string };
+  game: {
+    id: string;
+    date: string;
+    ownSide: Side;
+    teamAName: string;
+    teamBName: string;
+    /** 省いたときは10分・5分・第4Qまでとして出場時間を計算する */
+    periodMinutes?: number;
+    otMinutes?: number;
+    currentPeriod?: number;
+  };
   roster: readonly RosterEntry[];
   events: readonly GameEvent[];
 }
@@ -106,7 +130,7 @@ export interface PlayerGameLog {
   date: string;
   opponent: string;
   result: GameResult;
-  line: BoxScoreLine;
+  line: StatLine;
 }
 
 export interface PlayerAnalysis {
@@ -116,7 +140,7 @@ export interface PlayerAnalysis {
   /** 出場登録された試合数 */
   games: number;
   /** 期間の合計 */
-  line: BoxScoreLine;
+  line: StatLine;
   /** 古い順 */
   log: PlayerGameLog[];
 }
@@ -156,8 +180,8 @@ const LINE_KEYS = [
   'pf',
 ] as const satisfies readonly (keyof BoxScoreLine)[];
 
-function zeroLine(number = '', name = ''): BoxScoreLine {
-  const line = { rosterId: null, number, name } as BoxScoreLine;
+function zeroLine(number = '', name = ''): StatLine {
+  const line = { rosterId: null, number, name } as StatLine;
   for (const k of LINE_KEYS) line[k] = 0;
   return line;
 }
@@ -227,6 +251,13 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
     addLine(result.own, box[ownSide].total);
     addLine(result.opp, box[oppSide].total);
     const playerIdOf = new Map(roster.map((r) => [r.id, r.playerId]));
+    // 出場時間と +/-。先発と交代を記録していないチームの選手は含まれない
+    const lineup = computeLineupStats(events, roster, {
+      periodMinutes: game.periodMinutes ?? 10,
+      otMinutes: game.otMinutes ?? 5,
+      currentPeriod: game.currentPeriod ?? RULES.regulationPeriods,
+      finished: true,
+    });
     for (const line of box[ownSide].players) {
       const playerId = line.rosterId ? playerIdOf.get(line.rosterId) : null;
       const key = playerId ?? `${line.number}\n${line.name}`;
@@ -240,7 +271,17 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
       if (line.name) p.name = line.name;
       p.games++;
       addLine(p.line, line);
-      p.log.push({ gameId: game.id, date: game.date, opponent, result: outcome, line });
+      const stat = line.rosterId ? lineup.get(line.rosterId) : undefined;
+      const gameLine: StatLine = stat
+        ? { ...line, seconds: stat.seconds, plusMinus: stat.plusMinus, lineupGames: 1, approximate: stat.approximate }
+        : line;
+      if (stat) {
+        p.line.seconds = (p.line.seconds ?? 0) + stat.seconds;
+        p.line.plusMinus = (p.line.plusMinus ?? 0) + stat.plusMinus;
+        p.line.lineupGames = (p.line.lineupGames ?? 0) + 1;
+        p.line.approximate = p.line.approximate || stat.approximate;
+      }
+      p.log.push({ gameId: game.id, date: game.date, opponent, result: outcome, line: gameLine });
     }
   }
 
@@ -263,9 +304,12 @@ export interface StatColumn {
   label: string;
   /** 日本語の名前 */
   name: string;
-  /** count は合計と1試合平均を出せる。pct は成功率（0〜100）で、平均にしない */
-  kind: 'count' | 'pct';
-  get: (line: BoxScoreLine) => number | null;
+  /**
+   * count は合計と1試合平均を出せる。pct は成功率（0〜100）で、平均にしない。
+   * time（出場時間・秒）と pm（+/-）は、先発と交代を記録した試合の分だけを集計し、平均もその試合数で割る
+   */
+  kind: 'count' | 'pct' | 'time' | 'pm';
+  get: (line: StatLine) => number | null;
 }
 
 const count = (key: (typeof LINE_KEYS)[number], label: string, name: string): StatColumn => ({
@@ -283,8 +327,8 @@ const rate = (
   att: (typeof LINE_KEYS)[number],
 ): StatColumn => ({ key, label, name, kind: 'pct', get: (l) => pct(l[made], l[att]) });
 
-/** 分析で見られる成績の項目（表の列順） */
-export const STAT_COLUMNS: readonly StatColumn[] = [
+/** チーム合計にも出せる成績の項目（表の列順） */
+export const TEAM_STAT_COLUMNS: readonly StatColumn[] = [
   count('pts', 'PTS', '得点'),
   count('fg2m', '2PM', '2P成功'),
   count('fg2a', '2PA', '2P試投'),
@@ -305,20 +349,36 @@ export const STAT_COLUMNS: readonly StatColumn[] = [
   count('pf', 'PF', 'ファウル'),
 ];
 
+const lineupValue = (key: 'seconds' | 'plusMinus') => (l: StatLine) => (l.lineupGames ? (l[key] ?? 0) : null);
+
+/** 選手の成績の項目。チームの項目に、出場時間と +/- を足したもの */
+export const STAT_COLUMNS: readonly StatColumn[] = [
+  TEAM_STAT_COLUMNS[0],
+  { key: 'min', label: 'MIN', name: '出場時間', kind: 'time', get: lineupValue('seconds') },
+  { key: 'pm', label: '+/-', name: '+/-', kind: 'pm', get: lineupValue('plusMinus') },
+  ...TEAM_STAT_COLUMNS.slice(1),
+];
+
 export function statColumn(key: string): StatColumn {
   return STAT_COLUMNS.find((c) => c.key === key) ?? STAT_COLUMNS[0];
 }
 
-/** 項目の値。count は mode に応じて合計か1試合平均、pct は成功率（試投なしは null） */
-export function statValue(col: StatColumn, line: BoxScoreLine, games: number, mode: StatMode): number | null {
+/** 項目の値。count は mode に応じて合計か1試合平均、pct は成功率（試投なしは null）。time と pm は記録のある試合が無ければ null */
+export function statValue(col: StatColumn, line: StatLine, games: number, mode: StatMode): number | null {
   const v = col.get(line);
   if (v === null || col.kind === 'pct' || mode === 'total') return v;
+  if (col.kind === 'time' || col.kind === 'pm') return perGame(v, line.lineupGames ?? 0);
   return perGame(v, games);
 }
 
 export function formatStat(col: StatColumn, value: number | null, mode: StatMode): string {
   if (value === null) return '-';
   if (col.kind === 'pct') return `${Math.round(value)}%`;
+  if (col.kind === 'time') return formatClock(value);
+  if (col.kind === 'pm') {
+    const text = mode === 'total' ? String(value) : value.toFixed(1);
+    return value > 0 ? `+${text}` : text;
+  }
   return mode === 'total' ? String(value) : value.toFixed(1);
 }
 
