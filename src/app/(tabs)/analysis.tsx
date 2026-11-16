@@ -16,9 +16,11 @@ import {
   type TeamAnalysis,
 } from '@/domain/analysis';
 import { periodLabel } from '@/domain/rules';
-import { buildPlayersReportHtml, buildTeamReportHtml } from '@/output/analysisHtml';
+import { sharePdf } from '@/lib/share';
+import { buildFullReportHtml, buildPlayersReportHtml, buildTeamReportHtml } from '@/output/analysisHtml';
 import { GroupedBars, Legend, Meter } from '@/ui/charts';
 import { Button, Card, Chip, Row, SectionTitle, Segmented } from '@/ui/components';
+import { showDialog } from '@/ui/dialog';
 import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
@@ -70,6 +72,28 @@ export default function AnalysisScreen() {
       ? buildTeamReportHtml(analysis, options)
       : buildPlayersReportHtml(analysis, { ...options, sortKey });
   }, [shareOpen, axis, analysis, range, mode, sortKey]);
+  const [exporting, setExporting] = useState(false);
+
+  // 期間の全内容（チーム成績・選手の比較表・選手1人ずつのまとめ）を1つのPDFにして共有する
+  const exportAll = async () => {
+    setExporting(true);
+    try {
+      const html = buildFullReportHtml(analysis, { rangeLabel: DATE_RANGE_LABELS[range], mode, sortKey });
+      await sharePdf(html, `${analysis.teamName || 'benchbook'}_成績まとめ_${DATE_RANGE_LABELS[range]}`);
+    } catch (e) {
+      showDialog('出力できませんでした', e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const shareMenu = () =>
+    showDialog('共有', `期間：${DATE_RANGE_LABELS[range]}（${analysis.games}試合）`, [
+      { text: axis === 'team' ? 'チーム成績を共有' : '選手の比較表を共有', onPress: () => setShareOpen(true) },
+      { text: '全内容を1つのPDFで出力', onPress: () => void exportAll() },
+      { text: 'キャンセル', style: 'cancel' },
+    ]);
+
   const shareName = `${analysis.teamName || 'benchbook'}_${axis === 'team' ? 'チーム成績' : '選手成績'}_${DATE_RANGE_LABELS[range]}`;
 
   return (
@@ -79,7 +103,7 @@ export default function AnalysisScreen() {
     >
       <Row>
         <Text style={[styles.title, styles.flex]}>分析</Text>
-        {analysis.games > 0 && <Button title="共有" small variant="secondary" onPress={() => setShareOpen(true)} />}
+        {analysis.games > 0 && <Button title={exporting ? '出力中…' : '共有'} small variant="secondary" disabled={exporting} onPress={shareMenu} />}
       </Row>
       <Segmented
         options={[

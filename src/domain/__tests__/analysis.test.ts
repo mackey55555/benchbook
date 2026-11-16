@@ -235,6 +235,12 @@ describe('共有用シート（HTML）', () => {
     expect(out.indexOf('<td class="b">5</td>')).toBeLessThan(out.indexOf('<td class="b">4</td>'));
   });
 
+  it('まとめは、チーム・比較表・記録のある選手の順に1シートずつ入る', () => {
+    const out = html.buildFullReportHtml(a, { rangeLabel: 'すべて', mode: 'avg', sortKey: 'pts' });
+    const titles = [...out.matchAll(/<h1>(.*?)<\/h1>/g)].map((m) => m[1]);
+    expect(titles).toEqual(['&lt;A組&gt; チーム成績', '&lt;A組&gt; 選手成績', '#4 選手成績', '#5 選手成績']);
+  });
+
   it('選手個人のシートに合計・平均と試合ごとの成績が入る', () => {
     const out = html.buildPlayerReportHtml(a.players.find((p) => p.number === '4')!, { rangeLabel: 'すべて', teamName: 'A組' });
     expect(out).toContain('合計');

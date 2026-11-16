@@ -31,6 +31,8 @@ const CSS = `
 html, body { margin: 0; padding: 0; background: #fff; }
 body { font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; color: #16203a; font-size: 9pt; }
 .sheet { width: 194mm; margin: 0 auto; }
+.sheet + .sheet { page-break-before: always; }
+tr { page-break-inside: avoid; }
 @media screen { .sheet { padding: 4mm 0; } }
 .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 0.6mm solid #16203a; padding-bottom: 2mm; }
 h1 { font-size: 16pt; margin: 0; }
@@ -62,17 +64,29 @@ th.sort { background: #16203a; color: #fff; }
 .foot { margin-top: 4mm; font-size: 7.5pt; color: #5a6478; }
 `;
 
-function page(title: string, sub: string, body: string): string {
+/** シート1枚分（見出し・本文・注記）。複数つなげると、PDFではシートごとに改ページする */
+interface Sheet {
+  title: string;
+  /** 見出しの右に出す補足（エスケープ済み） */
+  sub: string;
+  body: string;
+}
+
+function sheetHtml(s: Sheet): string {
+  return `<div class="sheet">
+<div class="head"><h1>${esc(s.title)}</h1><div class="sub">${s.sub}</div></div>
+${s.body}
+<div class="foot">Benchbook で記録した控えの記録を集計したものです。公式記録ではありません。成功率は期間全体の成功数÷試投数です</div>
+</div>`;
+}
+
+function page(title: string, sheets: Sheet[]): string {
   return `<!DOCTYPE html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=794, user-scalable=yes">
 <title>${esc(title)}</title>
 <style>${CSS}</style></head>
-<body><div class="sheet">
-<div class="head"><h1>${esc(title)}</h1><div class="sub">${sub}</div></div>
-${body}
-<div class="foot">Benchbook で記録した控えの記録を集計したものです。公式記録ではありません。成功率は期間全体の成功数÷試投数です</div>
-</div></body></html>`;
+<body>${sheets.map(sheetHtml).join('\n')}</body></html>`;
 }
 
 const shortDate = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
@@ -101,6 +115,11 @@ export interface ReportOptions {
 
 /** チーム分析の1枚。戦績、得点の推移、Q別平均、全項目、試合一覧 */
 export function buildTeamReportHtml(a: TeamAnalysis, o: ReportOptions): string {
+  const sheet = teamSheet(a, o);
+  return page(sheet.title, [sheet]);
+}
+
+function teamSheet(a: TeamAnalysis, o: ReportOptions): Sheet {
   const n = a.games;
   const avgFor = perGame(a.own.pts, n);
   const avgAgainst = perGame(a.opp.pts, n);
@@ -137,14 +156,24 @@ ${[...a.trend]
   )
   .join('')}
 </table>`;
-  return page(`${a.teamName || '自チーム'} チーム成績`, `${esc(o.rangeLabel)}・${n}試合`, body);
+  return { title: `${a.teamName || '自チーム'} チーム成績`, sub: `${esc(o.rangeLabel)}・${n}試合`, body };
 }
 
 /** 選手の比較表。sortKey の多い順に並べる */
 export function buildPlayersReportHtml(a: TeamAnalysis, o: ReportOptions & { sortKey: string }): string {
+  const sheet = playersSheet(a, o);
+  return page(sheet.title, [sheet]);
+}
+
+function sortedPlayers(a: TeamAnalysis, o: ReportOptions & { sortKey: string }): PlayerAnalysis[] {
   const sortCol = statColumn(o.sortKey);
   const value = (p: PlayerAnalysis) => statValue(sortCol, p.line, p.games, o.mode) ?? -1;
-  const players = [...a.players].sort((x, y) => value(y) - value(x) || y.line.pts - x.line.pts);
+  return [...a.players].sort((x, y) => value(y) - value(x) || y.line.pts - x.line.pts);
+}
+
+function playersSheet(a: TeamAnalysis, o: ReportOptions & { sortKey: string }): Sheet {
+  const sortCol = statColumn(o.sortKey);
+  const players = sortedPlayers(a, o);
   const body = `
 <h2>選手別（${MODE_LABEL[o.mode]}・${esc(sortCol.name)}の多い順）</h2>
 <table><tr><th>#</th><th class="l">選手</th><th>試合</th>${STAT_COLUMNS.map((c) => `<th class="${c.key === sortCol.key ? 'sort' : ''}">${c.label}</th>`).join('')}</tr>
@@ -159,11 +188,16 @@ ${players
 <div class="foot">試合数は出場登録された試合の数です。${STAT_COLUMNS.filter((c) => c.kind === 'count')
     .map((c) => `${c.label}：${c.name}`)
     .join('　')}</div>`;
-  return page(`${a.teamName || '自チーム'} 選手成績`, `${esc(o.rangeLabel)}・${a.games}試合`, body);
+  return { title: `${a.teamName || '自チーム'} 選手成績`, sub: `${esc(o.rangeLabel)}・${a.games}試合`, body };
 }
 
 /** 選手1人のまとめ。合計と平均、得点の推移、試合ごとの成績 */
 export function buildPlayerReportHtml(p: PlayerAnalysis, o: { rangeLabel: string; teamName: string }): string {
+  const sheet = playerSheet(p, o);
+  return page(sheet.title, [sheet]);
+}
+
+function playerSheet(p: PlayerAnalysis, o: { rangeLabel: string; teamName: string }): Sheet {
   const counts = STAT_COLUMNS.filter((c) => c.kind === 'count');
   const trend = p.log.slice(-20);
   const row = (label: string, mode: StatMode) =>
@@ -193,5 +227,18 @@ ${[...p.log]
   )
   .join('')}
 </table>`;
-  return page(`#${p.number} ${p.name} 選手成績`.replace(/\s+/g, ' '), esc(o.rangeLabel), body);
+  return { title: `#${p.number} ${p.name} 選手成績`.replace(/\s+/g, ' '), sub: esc(o.rangeLabel), body };
+}
+
+/**
+ * 期間の全内容を1つにまとめる。チーム成績、選手の比較表、選手1人ずつのまとめの順で、
+ * PDFではシートごとに改ページする。記録が1つも無い選手のまとめは省く。
+ */
+export function buildFullReportHtml(a: TeamAnalysis, o: ReportOptions & { sortKey: string }): string {
+  const active = sortedPlayers(a, o).filter((p) => STAT_COLUMNS.some((c) => (c.get(p.line) ?? 0) > 0));
+  return page(`${a.teamName || '自チーム'} 成績まとめ`, [
+    teamSheet(a, o),
+    playersSheet(a, o),
+    ...active.map((p) => playerSheet(p, { rangeLabel: o.rangeLabel, teamName: a.teamName })),
+  ]);
 }
