@@ -3,13 +3,14 @@ import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
 import {
   addEvent,
   addRosterEntry,
+  deleteGame,
   endPeriod,
   isPeriodEnded,
   setLastTwoMinutes,
@@ -28,9 +29,12 @@ import {
 } from '@/domain/types';
 import { Button, Chip, Row } from '@/ui/components';
 import { DEFAULT_FT, EventLogSheet } from '@/ui/EventLogSheet';
+import { FoulBoard } from '@/ui/FoulBoard';
 import { Text } from '@/ui/Text';
 import { colors, radius, sideBg, sideColor } from '@/ui/theme';
+import { TopSheet } from '@/ui/TopSheet';
 import { attempt, useGame } from '@/ui/useGame';
+import { DialogHost, showDialog } from '@/ui/dialog';
 
 const BENCH = 'bench';
 type Selection = { side: Side; rosterId: string };
@@ -86,6 +90,7 @@ export default function LiveScreen() {
   const [selected, setSelected] = useState<Selection | null>(null);
   const [foulSheet, setFoulSheet] = useState<{ kind: FoulKind; ft: number } | null>(null);
   const [logOpen, setLogOpen] = useState(false);
+  const [foulsOpen, setFoulsOpen] = useState(false);
   // 試合中の背番号追加（開始時に相手の番号が全員分かっていない場合のため）
   const [adding, setAdding] = useState<{ side: Side; number: string } | null>(null);
   // 交代シート：交代後にコート上にいる選手と、残り時間（テンキーの数字。空なら時刻なし）
@@ -159,7 +164,7 @@ export default function LiveScreen() {
 
   const timeout = (side: Side) => {
     const name = (side === 'A' ? game.teamAName : game.teamBName) || `チーム${side}`;
-    Alert.alert(`${name} のタイムアウト`, `記録しますか？（残り${state[side].timeoutsRemaining}回）`, [
+    showDialog(`${name} のタイムアウト`, `記録しますか？（残り${state[side].timeoutsRemaining}回）`, [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '記録する',
@@ -175,7 +180,7 @@ export default function LiveScreen() {
   };
 
   const finishPeriod = () =>
-    Alert.alert(`${periodLabel(period)} を終了`, 'オフィシャルとの照合に進みます。', [
+    showDialog(`${periodLabel(period)} を終了`, 'オフィシャルとの照合に進みます。', [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '終了する',
@@ -196,11 +201,27 @@ export default function LiveScreen() {
   };
 
   const menu = () =>
-    Alert.alert('メニュー', undefined, [
+    showDialog('メニュー', undefined, [
       { text: '試合情報・出場登録を編集', onPress: () => router.push(`/games/${gameId}/prep`) },
       {
         text: 'ホームに戻る（試合は続行）',
         onPress: () => (router.canGoBack() ? router.back() : router.replace('/')),
+      },
+      {
+        text: 'この試合を削除',
+        style: 'destructive',
+        onPress: () =>
+          showDialog('試合を削除', 'この試合の記録をすべて削除します。元に戻せません。', [
+            { text: 'キャンセル', style: 'cancel' },
+            {
+              text: '削除',
+              style: 'destructive',
+              onPress: () => {
+                deleteGame(db, gameId);
+                router.replace('/');
+              },
+            },
+          ]),
       },
       { text: 'キャンセル', style: 'cancel' },
     ]);
@@ -477,6 +498,15 @@ export default function LiveScreen() {
           {teamName('B')}
         </Text>
         <View style={[styles.sideBar, { backgroundColor: colors.teamBOnInk }]} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ファウル状況"
+          onPress={() => setFoulsOpen(true)}
+          hitSlop={6}
+          style={styles.foulsButton}
+        >
+          <Text style={styles.foulsButtonText}>ファウル状況</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="メニュー" onPress={menu} hitSlop={8} style={styles.menu}>
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.primaryText} />
         </Pressable>
@@ -595,6 +625,7 @@ export default function LiveScreen() {
             </Row>
           </Pressable>
         </Pressable>
+        <DialogHost />
       </Modal>
 
       <Modal
@@ -637,6 +668,7 @@ export default function LiveScreen() {
             </Row>
           </Pressable>
         </Pressable>
+        <DialogHost />
       </Modal>
 
       <Modal
@@ -734,9 +766,19 @@ export default function LiveScreen() {
             </Pressable>
           )}
         </Pressable>
+        <DialogHost />
       </Modal>
 
       <EventLogSheet visible={logOpen} bundle={bundle} onClose={() => setLogOpen(false)} onChanged={reload} />
+
+      <TopSheet visible={foulsOpen} title="ファウル状況" onClose={() => setFoulsOpen(false)}>
+        <FoulBoard
+          names={{ A: teamName('A'), B: teamName('B') }}
+          teams={{ A: state.A, B: state.B }}
+          events={bundle.events}
+          period={period}
+        />
+      </TopSheet>
     </View>
   );
 }
@@ -767,6 +809,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
   },
+  foulsButton: { height: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: colors.inkSoft, justifyContent: 'center' },
+  foulsButtonText: { fontSize: 12, fontWeight: '800', color: colors.primaryText },
   menu: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.inkSoft, alignItems: 'center', justifyContent: 'center' },
   main: { flex: 1, flexDirection: 'row', gap: 10, paddingTop: 6 },
   team: { flex: 1, gap: GAP },

@@ -43,6 +43,7 @@
 - 色・フォント・角丸は `src/ui/theme.ts` から取る。画面に色の値を直接書かない
 - 文字は `@/ui/Text` の `Text` を使う（react-native の `Text` を直接使わない）。数字（得点・背番号・時計）は `num` を付ける
 - オレンジ（`accent`）は画面でいちばん押してほしいボタンにだけ使い、上に載せる文字は濃紺。白文字は載せない
+- 確認・通知はOS標準のアラート（`Alert.alert`）を使わず、`@/ui/dialog` の `showDialog` を使う（iOSではアラートで画面が縦に回転するため）。Modal の中身の最後には `<DialogHost />` を置く
 - アイコン・スプラッシュ（`assets/`、`app.config.ts`）の変更はOTAで配れない
 
 ## OTA

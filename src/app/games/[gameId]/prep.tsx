@@ -1,7 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -30,11 +30,13 @@ import {
   updateRosterEntry,
 } from '@/db/repo';
 import { RULES } from '@/domain/rules';
+import type { Player } from '@/db/schema';
 import type { Side } from '@/domain/types';
 import { Button, Card, Chip, CommitInput, Row, SectionTitle, Segmented, styles as ui } from '@/ui/components';
 import { Text } from '@/ui/Text';
 import { colors, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
+import { DialogHost, showDialog } from '@/ui/dialog';
 
 function parseMinutes(text: string, fallback: number): number {
   const n = Number.parseInt(text, 10);
@@ -46,6 +48,14 @@ export default function PrepScreen() {
   const router = useRouter();
   const { bundle, reload } = useGame(gameId);
   const [teamPicker, setTeamPicker] = useState<Side | null>(null);
+  // 読み込むチームを選んだあと、今日来ている選手を選ぶ（任意。そのまま読み込めば全員）
+  const [attendance, setAttendance] = useState<{
+    side: Side;
+    teamId: string;
+    teamName: string;
+    players: Player[];
+    picked: string[];
+  } | null>(null);
   const [draft, setDraft] = useState<Record<Side, { number: string; name: string }>>({
     A: { number: '', name: '' },
     B: { number: '', name: '' },
@@ -76,7 +86,7 @@ export default function PrepScreen() {
   const start = () => {
     const starters = roster.filter((r) => r.side === game.ownSide && r.isStarter).length;
     if (starters === RULES.startersCount) return doStart();
-    Alert.alert(
+    showDialog(
       '自チームの先発が5名選ばれていません',
       `現在 ${starters}名です。交代と出場時間を記録するには、先発を5名選んでから開始してください。`,
       [
@@ -87,7 +97,7 @@ export default function PrepScreen() {
   };
 
   const confirmDelete = () =>
-    Alert.alert('試合を削除', 'この試合を削除します。元に戻せません。', [
+    showDialog('試合を削除', 'この試合を削除します。元に戻せません。', [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '削除',
@@ -137,7 +147,7 @@ export default function PrepScreen() {
               small
               onPress={() => {
                 if (run(() => saveRosterAsTeam(db, gameId, side))) {
-                  Alert.alert('保存しました', '次の試合から「保存済みチームから読み込む」で呼び出せます。');
+                  showDialog('保存しました', '次の試合から「保存済みチームから読み込む」で呼び出せます。');
                 }
               }}
             />
@@ -218,7 +228,7 @@ export default function PrepScreen() {
               onCommit={(v) => {
                 if (/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) run(() => updateGame(db, gameId, { date: v.trim() }));
                 else {
-                  Alert.alert('確認してください', '日付は 2026-11-15 の形式で入力してください');
+                  showDialog('確認してください', '日付は 2026-11-15 の形式で入力してください');
                   reload();
                 }
               }}
@@ -315,7 +325,16 @@ export default function PrepScreen() {
                   onPress={() => {
                     const side = teamPicker;
                     setTeamPicker(null);
-                    if (side) run(() => loadRosterFromTeam(db, gameId, side, t.id));
+                    if (!side) return;
+                    const active = listPlayers(db, t.id).filter((p) => p.isActive);
+                    // 上限以内なら全員を選んだ状態から、超えるなら空から選ぶ
+                    setAttendance({
+                      side,
+                      teamId: t.id,
+                      teamName: t.name,
+                      players: active,
+                      picked: active.length <= RULES.maxRosterSize ? active.map((p) => p.id) : [],
+                    });
                   }}
                 >
                   <Text style={styles.sheetRowText} numberOfLines={1}>
@@ -329,6 +348,95 @@ export default function PrepScreen() {
             <Button title="キャンセル" variant="secondary" onPress={() => setTeamPicker(null)} />
           </Pressable>
         </Pressable>
+        <DialogHost />
+      </Modal>
+
+      <Modal
+        visible={attendance !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAttendance(null)}
+        supportedOrientations={['portrait', 'landscape']}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setAttendance(null)}>
+          {attendance && (
+            <Pressable style={styles.sheet} onPress={() => undefined}>
+              <Row>
+                <Text style={[styles.sheetTitle, styles.flex]} numberOfLines={1}>
+                  今日来ている選手
+                </Text>
+                <Text
+                  style={[
+                    styles.pickCount,
+                    attendance.picked.length > RULES.maxRosterSize && { color: colors.danger },
+                  ]}
+                >
+                  {attendance.picked.length}/{RULES.maxRosterSize}人
+                </Text>
+              </Row>
+              <Text style={styles.sideNote}>
+                {attendance.teamName}　来ていない選手はタップして外します。記録のない出場登録は置き換わります
+              </Text>
+              <Row>
+                <Button
+                  title="全員を選ぶ"
+                  variant="secondary"
+                  small
+                  onPress={() => setAttendance((a) => (a ? { ...a, picked: a.players.map((p) => p.id) } : a))}
+                />
+                <Button
+                  title="全員を外す"
+                  variant="secondary"
+                  small
+                  onPress={() => setAttendance((a) => (a ? { ...a, picked: [] } : a))}
+                />
+              </Row>
+              <ScrollView style={styles.sheetList}>
+                {attendance.players.map((p) => {
+                  const on = attendance.picked.includes(p.id);
+                  return (
+                    <Pressable
+                      key={p.id}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                      accessibilityLabel={`#${p.number} ${p.name}`}
+                      style={styles.sheetRow}
+                      onPress={() =>
+                        setAttendance((a) =>
+                          a ? { ...a, picked: on ? a.picked.filter((id) => id !== p.id) : [...a.picked, p.id] } : a,
+                        )
+                      }
+                    >
+                      <View style={[styles.check, on && styles.checkOn]}>
+                        {on && <Ionicons name="checkmark" size={18} color={colors.primaryText} />}
+                      </View>
+                      <Text num style={styles.pickNumber}>
+                        {p.number}
+                      </Text>
+                      <Text style={styles.sheetRowText} numberOfLines={1}>
+                        {p.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              <Row>
+                <Button title="キャンセル" variant="secondary" onPress={() => setAttendance(null)} style={styles.flex} />
+                <Button
+                  title={`${attendance.picked.length}人を読み込む`}
+                  disabled={attendance.picked.length === 0 || attendance.picked.length > RULES.maxRosterSize}
+                  style={styles.flex}
+                  onPress={() => {
+                    const a = attendance;
+                    setAttendance(null);
+                    run(() => loadRosterFromTeam(db, gameId, a.side, a.teamId, a.picked));
+                  }}
+                />
+              </Row>
+            </Pressable>
+          )}
+        </Pressable>
+        <DialogHost />
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -365,5 +473,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.line,
   },
+  pickCount: { fontSize: 16, fontWeight: '800', color: colors.text },
+  pickNumber: { width: 36, fontSize: 22, textAlign: 'center', color: colors.text },
+  check: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: colors.disabled,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   sheetRowText: { flex: 1, fontSize: 16, color: colors.text },
 });

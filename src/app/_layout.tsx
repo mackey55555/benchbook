@@ -19,6 +19,7 @@ import { Text } from '@/ui/Text';
 import { colors, fonts } from '@/ui/theme';
 
 import migrations from '../../drizzle/migrations';
+import { DialogHost } from '@/ui/dialog';
 
 // フォントとDBの準備が終わるまでスプラッシュを出したままにする。
 // 準備が一瞬で終わってもロゴが見えるよう、最低でもこの時間は表示する
@@ -72,7 +73,7 @@ export default function RootLayout() {
   if (!success || !fontsReady) return <View style={styles.center} />;
 
   return (
-    <>
+    <View style={styles.root}>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -101,11 +102,13 @@ export default function RootLayout() {
           options={{ orientation: 'landscape', headerShown: false, gestureEnabled: false }}
         />
       </Stack>
-    </>
+      <DialogHost />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
   errorTitle: { fontSize: 17, fontWeight: '700' },
   errorBody: { fontSize: 13, color: colors.sub },

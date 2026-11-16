@@ -394,11 +394,21 @@ export function toggleCaptain(db: Db, id: string): void {
 }
 
 /** 保存済みチームの有効な選手を、その側の出場登録に読み込む（記録のない登録は置き換える） */
-export function loadRosterFromTeam(db: Db, gameId: string, side: Side, teamId: string): void {
+/**
+ * 保存済みチームから出場登録を読み込む。
+ * playerIds を渡すと、その選手（今日来ている選手）だけを読み込む。
+ */
+export function loadRosterFromTeam(
+  db: Db,
+  gameId: string,
+  side: Side,
+  teamId: string,
+  playerIds?: readonly string[],
+): void {
   const team = getTeam(db, teamId);
   if (!team) return;
   const source = listPlayers(db, teamId)
-    .filter((p) => p.isActive)
+    .filter((p) => p.isActive && (!playerIds || playerIds.includes(p.id)))
     .slice(0, RULES.maxRosterSize);
   db.transaction((tx) => {
     const usedIds = tx
@@ -839,7 +849,17 @@ export function recordMismatch(db: Db, gameId: string, period: number, note = ''
  * 照合一致。period_checks に記録して次へ進める。
  * 第4Q以降は同点なら延長、それ以外は試合終了（status=finished）。
  */
-export function confirmPeriod(db: Db, gameId: string, period: number, note = ''): AfterPeriod {
+/**
+ * 照合を「一致」で確定し、次へ進む。
+ * endTied を付けると、第4Q以降が同点でも延長に入らず試合終了にする（引き分けのある大会・練習試合用）。
+ */
+export function confirmPeriod(
+  db: Db,
+  gameId: string,
+  period: number,
+  note = '',
+  options: { endTied?: boolean } = {},
+): AfterPeriod {
   return db.transaction((tx) => {
     const game = tx.select().from(games).where(eq(games.id, gameId)).get();
     if (!game) throw new RepoError('試合が見つかりません');
@@ -847,7 +867,8 @@ export function confirmPeriod(db: Db, gameId: string, period: number, note = '')
       insertMarker(tx, gameId, 'PERIOD_END', period);
     }
     const score = writeCheck(tx, gameId, period, true, note);
-    const outcome = afterPeriod(period, score);
+    const next = afterPeriod(period, score);
+    const outcome = next === 'overtime' && options.endTied ? 'finished' : next;
     if (game.status === 'live' && game.currentPeriod === period) {
       if (outcome === 'finished') {
         tx.update(games)

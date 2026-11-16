@@ -13,7 +13,7 @@ import { Text } from './Text';
 import { colors, fonts, radius } from './theme';
 
 /** accent は画面でいちばん押してほしいボタンにだけ使う */
-type Variant = 'primary' | 'accent' | 'secondary' | 'danger' | 'ghost';
+type Variant = 'primary' | 'accent' | 'secondary' | 'danger' | 'dangerSoft' | 'ghost';
 
 export function Button(props: {
   title: string;
@@ -32,8 +32,10 @@ export function Button(props: {
         ? colors.accent
         : variant === 'danger'
         ? colors.danger
-        : variant === 'secondary'
-          ? colors.disabledBg
+        : variant === 'dangerSoft'
+          ? colors.dangerBg
+          : variant === 'secondary'
+            ? colors.disabledBg
           : 'transparent';
   const fg = disabled
     ? colors.sub
@@ -41,7 +43,9 @@ export function Button(props: {
       ? colors.primaryText
       : variant === 'accent'
         ? colors.accentText
-        : colors.text;
+        : variant === 'dangerSoft'
+          ? colors.dangerInk
+          : colors.text;
   return (
     <Pressable
       accessibilityRole="button"

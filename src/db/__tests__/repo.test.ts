@@ -142,6 +142,17 @@ describe('試合準備', () => {
     ]);
   });
 
+  it('今日来ている選手だけを選んで読み込める', () => {
+    const { db } = openTestDb();
+    ensureOwnTeam(db);
+    const team = createTeam(db, '大所帯');
+    for (let n = 1; n <= 16; n++) addPlayer(db, team.id, { number: String(n), name: '' });
+    const here = listPlayers(db, team.id).filter((p) => ['2', '9', '16'].includes(p.number));
+    const game = createGame(db);
+    loadRosterFromTeam(db, game.id, 'B', team.id, here.map((p) => p.id));
+    expect(listRoster(db, game.id).filter((r) => r.side === 'B').map((r) => r.number)).toEqual(['2', '9', '16']);
+  });
+
   it('出場登録が0名のチームがあると開始できない。進行中の試合は1つだけ', () => {
     const { db } = openTestDb();
     const own = ensureOwnTeam(db);
@@ -401,6 +412,27 @@ describe('Q終了・照合', () => {
     expect(finished.status).toBe('finished');
     expect(finished.finishedAt).not.toBeNull();
     expect(getLiveGame(db)).toBeUndefined();
+  });
+});
+
+describe('同点のまま試合終了', () => {
+  it('第4Qが同点でも、endTied を付ければ延長に入らず終了する', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    for (const p of [1, 2, 3]) {
+      endPeriod(db, game.id, p);
+      confirmPeriod(db, game.id, p);
+    }
+    endPeriod(db, game.id, 4);
+    expect(confirmPeriod(db, game.id, 4, '', { endTied: true })).toBe('finished');
+    expect(getGame(db, game.id)).toMatchObject({ status: 'finished', currentPeriod: 4 });
+  });
+
+  it('第3Qまでは endTied を付けても次のQへ進む', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    endPeriod(db, game.id, 1);
+    expect(confirmPeriod(db, game.id, 1, '', { endTied: true })).toBe('nextPeriod');
   });
 });
 

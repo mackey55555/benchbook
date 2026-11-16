@@ -1,9 +1,9 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert } from 'react-native';
 
 import { db } from '@/db/client';
 import { RepoError, getGameBundle, type GameBundle } from '@/db/repo';
+import { showDialog } from './dialog';
 
 /**
  * 試合データを読み込む。DBは同期APIなので、書き込み → reload() の順に呼べば
@@ -31,7 +31,7 @@ export function attempt(action: () => void): boolean {
     return true;
   } catch (e) {
     if (e instanceof RepoError) {
-      Alert.alert('確認してください', e.message);
+      showDialog('確認してください', e.message);
       return false;
     }
     throw e;

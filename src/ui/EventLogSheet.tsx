@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
@@ -19,6 +19,7 @@ import { Button, Chip, Row, SectionTitle, Segmented } from './components';
 import { Text } from './Text';
 import { colors, sideColor } from './theme';
 import { attempt } from './useGame';
+import { DialogHost, showDialog } from './dialog';
 
 const EDITABLE_TYPES: EventType[] = [
   'FG2_MADE',
@@ -114,7 +115,7 @@ export function EventLogSheet(props: {
   };
 
   const remove = (e: GameEvent) =>
-    Alert.alert('記録を削除', `「${describeEvent(e, bundle.roster)}」を削除します。`, [
+    showDialog('記録を削除', `「${describeEvent(e, bundle.roster)}」を削除します。`, [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '削除',
@@ -280,6 +281,7 @@ export function EventLogSheet(props: {
             </>
           )}
         </SafeAreaView>
+        <DialogHost />
       </SafeAreaProvider>
     </Modal>
   );

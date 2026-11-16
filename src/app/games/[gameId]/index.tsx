@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import { WebView } from 'react-native-webview';
 
@@ -19,6 +19,7 @@ import { EventLogSheet } from '@/ui/EventLogSheet';
 import { Text } from '@/ui/Text';
 import { colors, fonts, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
+import { showDialog } from '@/ui/dialog';
 
 type Tab = 'running' | 'box' | 'plays' | 'periods';
 
@@ -63,7 +64,7 @@ export default function GameDetailScreen() {
     try {
       await action();
     } catch (e) {
-      Alert.alert('共有できませんでした', e instanceof Error ? e.message : String(e));
+      showDialog('共有できませんでした', e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -74,7 +75,7 @@ export default function GameDetailScreen() {
   useEffect(() => {
     if (finished !== '1' || promptedRef.current || !bundle) return;
     promptedRef.current = true;
-    Alert.alert('試合終了', 'お疲れさまでした。バックアップ（JSON）を書き出しますか？', [
+    showDialog('試合終了', 'お疲れさまでした。バックアップ（JSON）を書き出しますか？', [
       { text: 'あとで', style: 'cancel' },
       { text: '書き出す', onPress: () => void shareBackup() },
     ]);
@@ -264,7 +265,7 @@ export default function GameDetailScreen() {
   };
 
   const confirmDelete = () =>
-    Alert.alert('試合を削除', 'この試合の記録をすべて削除します。元に戻せません。', [
+    showDialog('試合を削除', 'この試合の記録をすべて削除します。元に戻せません。', [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '削除',
@@ -277,7 +278,7 @@ export default function GameDetailScreen() {
     ]);
 
   const confirmReopen = () =>
-    Alert.alert('試合を再開', `${periodLabel(game.currentPeriod)} の入力に戻ります。`, [
+    showDialog('試合を再開', `${periodLabel(game.currentPeriod)} の入力に戻ります。`, [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '再開する',

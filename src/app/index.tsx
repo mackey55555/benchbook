@@ -7,11 +7,12 @@ import { AppState, Image, Pressable, ScrollView, StyleSheet, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
-import { createGame, getLiveGame, isPeriodEnded, listEvents, listGames } from '@/db/repo';
+import { createGame, deleteGame, getLiveGame, isPeriodEnded, listEvents, listGames } from '@/db/repo';
 import type { Game } from '@/db/schema';
 import { periodLabel } from '@/domain/rules';
 import { Button, Card, SectionTitle } from '@/ui/components';
 import { Text } from '@/ui/Text';
+import { showDialog } from '@/ui/dialog';
 import { colors, radius } from '@/ui/theme';
 import { useRefresh } from '@/ui/useGame';
 
@@ -29,7 +30,7 @@ let updateReady = false;
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [version] = useRefresh();
+  const [version, refresh] = useRefresh();
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(updateReady);
@@ -108,6 +109,29 @@ export default function HomeScreen() {
       setUpdateStatus(`更新できませんでした: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
+
+  // 一覧の長押しで、間違って作った試合などを消せる
+  const gameMenu = (game: Game) =>
+    showDialog(`${game.teamAName || 'A'} vs ${game.teamBName || 'B'}`, game.date, [
+      { text: '開く', onPress: () => openGame(game) },
+      {
+        text: 'この試合を削除',
+        style: 'destructive',
+        onPress: () =>
+          showDialog('試合を削除', 'この試合の記録をすべて削除します。元に戻せません。', [
+            { text: 'キャンセル', style: 'cancel' },
+            {
+              text: '削除',
+              style: 'destructive',
+              onPress: () => {
+                deleteGame(db, game.id);
+                refresh();
+              },
+            },
+          ]),
+      },
+      { text: 'キャンセル', style: 'cancel' },
+    ]);
 
   const newGame = () => {
     const game = createGame(db);
@@ -203,7 +227,10 @@ export default function HomeScreen() {
         ))}
       </View>
 
-      <SectionTitle>これまでの試合</SectionTitle>
+      <View style={styles.listHead}>
+        <SectionTitle>これまでの試合</SectionTitle>
+        {games.length > 0 && <Text style={styles.listHint}>長押しで削除</Text>}
+      </View>
       {games.length === 0 && (
         <Text style={styles.empty}>まだ試合がありません。「新規試合」から始めましょう</Text>
       )}
@@ -215,6 +242,8 @@ export default function HomeScreen() {
             key={game.id}
             accessibilityRole="button"
             onPress={() => openGame(game)}
+            onLongPress={() => gameMenu(game)}
+            accessibilityHint="長押しで削除などのメニュー"
             style={({ pressed }) => [styles.gameRow, pressed && { opacity: 0.6 }]}
           >
             <View style={[styles.badge, { backgroundColor: b.bg }]}>
@@ -314,6 +343,8 @@ const styles = StyleSheet.create({
   },
   tileIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   tileLabel: { fontSize: 13, fontWeight: '700', color: colors.text },
+  listHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  listHint: { fontSize: 12, color: colors.sub },
   empty: { color: colors.sub, fontSize: 14, paddingVertical: 12 },
   gameRow: {
     flexDirection: 'row',
