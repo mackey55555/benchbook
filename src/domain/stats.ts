@@ -318,21 +318,38 @@ export const EVENT_LABELS: Record<EventType, string> = {
   L2M: '残り2分',
   SUB_IN: 'IN',
   SUB_OUT: 'OUT',
+  MARK: '要確認',
 };
 
-/** ログ表示用の1行（例：「A #7 3P○」「B ベンチ F(C)」「Q1終了」） */
+/** ログ表示用の1行（例：「A #7 3P○」「B ベンチ F(C)」「A チーム TOV」「Q1終了」）。残り時間があれば末尾に付ける */
 export function describeEvent(e: GameEvent, roster: readonly RosterEntry[]): string {
   if (e.type === 'PERIOD_END') return `${periodLabel(e.period)}終了`;
   if (e.type === 'L2M') return '残り2分';
+  const clock = e.clockSeconds !== null ? ` ${formatClock(e.clockSeconds)}` : '';
+  if (e.type === 'MARK') return `要確認の印${clock}`;
   const side = e.side ?? '';
-  if (e.type === 'TIMEOUT') return `${side} TO`;
+  if (e.type === 'TIMEOUT') return `${side} TO${clock}`;
+  // 選手なしの記録は、ファウルならベンチ（C・B）、それ以外はチーム（TOV・リバウンド）
   const who = e.rosterId
     ? `#${roster.find((r) => r.id === e.rosterId)?.number ?? '?'}`
-    : 'ベンチ';
+    : e.type === 'FOUL'
+      ? 'ベンチ'
+      : 'チーム';
   const what =
     e.type === 'FOUL' && e.foulKind
       ? `F(${foulNotation(e.foulKind, e.ftAwarded)})`
       : EVENT_LABELS[e.type];
-  const clock = e.clockSeconds !== null ? ` ${formatClock(e.clockSeconds)}` : '';
   return `${side} ${who} ${what}${clock}`;
+}
+
+/** 選手を選ばずに記録した「チーム」の行（チームのTO・リバウンド）。合計から選手の分を引いて出す */
+export function teamOnlyLine(team: TeamBoxScore): BoxScoreLine {
+  const line = emptyLine(null, '', 'チーム');
+  const sum = (key: 'oreb' | 'dreb' | 'reb' | 'tov') =>
+    team.total[key] - team.players.reduce((n, p) => n + p[key], 0);
+  line.oreb = sum('oreb');
+  line.dreb = sum('dreb');
+  line.reb = sum('reb');
+  line.tov = sum('tov');
+  return line;
 }

@@ -1,6 +1,6 @@
 import { RULES, computePeriodScores, computeScore, periodLabel } from '@/domain/rules';
 import { computeLineupStats, formatClock, type LineupStat } from '@/domain/lineup';
-import { buildBoxScore, type BoxScoreLine, type TeamBoxScore } from '@/domain/stats';
+import { buildBoxScore, teamOnlyLine, type BoxScoreLine, type TeamBoxScore } from '@/domain/stats';
 import type { Side } from '@/domain/types';
 
 import type { RunningScoreInput } from './runningScoreHtml';
@@ -46,6 +46,13 @@ function line(l: BoxScoreLine, marks: string, stat: LineupStat | undefined, isTo
   return `<tr class="${isTotal ? 'total' : ''}">${head}<td class="pts">${n(l.pts)}</td>${shooting(l.fg3m, l.fg3a, blank)}${shooting(l.fg2m, l.fg2a, blank)}${shooting(l.ftm, l.fta, blank)}<td>${n(l.pf)}</td><td>${n(l.oreb)}</td><td>${n(l.dreb)}</td><td>${n(l.reb)}</td><td>${n(l.tov)}</td><td>${n(l.ast)}</td><td>${n(l.stl)}</td><td>${n(l.blk)}</td>${lineupCells(stat)}</tr>`;
 }
 
+/** 選手を選ばずに記録した、チームのリバウンドとTO。記録があるときだけ行を出す */
+function teamRow(team: TeamBoxScore): string {
+  const l = teamOnlyLine(team);
+  if (l.reb === 0 && l.tov === 0) return '';
+  return `<tr><td class="total-label" colspan="3">チーム</td>${'<td></td>'.repeat(11)}<td>${l.oreb}</td><td>${l.dreb}</td><td>${l.reb}</td><td>${l.tov}</td>${'<td></td>'.repeat(5)}</tr>`;
+}
+
 function teamTable(
   input: RunningScoreInput,
   side: Side,
@@ -80,7 +87,7 @@ function teamTable(
 <tr><th rowspan="2" class="no">No.</th><th rowspan="2" class="s">S</th><th rowspan="2" class="name">Player</th><th rowspan="2" class="pts">PTS</th><th colspan="3">3P FG</th><th colspan="3">2P FG</th><th colspan="3">FT</th><th rowspan="2">F</th><th colspan="3">REBOUNDS</th><th rowspan="2">TO</th><th rowspan="2">AS</th><th rowspan="2">ST</th><th rowspan="2">BS</th><th rowspan="2">MIN</th><th rowspan="2">+/-</th></tr>
 <tr><th>M</th><th>A</th><th class="pct">%</th><th>M</th><th>A</th><th class="pct">%</th><th>M</th><th>A</th><th class="pct">%</th><th>OR</th><th>DR</th><th>TR</th></tr>
 </thead>
-<tbody>${rows}${empty}${line(t, '', undefined, true)}</tbody>
+<tbody>${rows}${empty}${teamRow(team)}${line(t, '', undefined, true)}</tbody>
 </table>
 <div class="fg">FG（2P＋3P）　${fgm}/${fga}　${percent(fgm, fga)}</div>
 </section>`;

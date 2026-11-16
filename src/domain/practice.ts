@@ -69,7 +69,7 @@ export function practiceStep(
       ? step(4, '「FOUL」をタップ（ファウルを記録）', 'foul')
       : step(3, '次はファウル。どちらかの番号をタップ', 'anyPlayer');
   }
-  const undone = events.some((e) => e.voidedAt !== null);
+  const undone = events.some((e) => e.voidedAt !== null && e.type !== 'MARK');
   if (!undone) return step(5, '押し間違えたら「取り消す」。押してみましょう', 'undo');
   if (!flags.foulSheetUsed) {
     return selectedSide !== null

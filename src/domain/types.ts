@@ -22,6 +22,8 @@ export const EVENT_TYPES = [
   // 選手交代（SPECへの追加）。コート上の5人と出場時間・+/- の算出に使う
   'SUB_IN',
   'SUB_OUT',
+  // あとで見直したい場面に付ける印（マネージャーの要望で追加）。集計には影響しない
+  'MARK',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -40,14 +42,14 @@ export interface GameEvent {
   orderKey: number;
   /** 1〜4、5以降は延長 */
   period: number;
-  /** PERIOD_END / L2M は null */
+  /** PERIOD_END / L2M / MARK は null */
   side: Side | null;
-  /** null = チーム/ベンチ */
+  /** null = チーム（チームのTO・リバウンド）／ベンチ（C・Bのファウル） */
   rosterId: string | null;
   type: EventType;
   foulKind: FoulKind | null;
   ftAwarded: number | null;
-  /** そのピリオドの残り時間（秒）。交代で任意入力。未入力は null */
+  /** そのピリオドの残り時間（秒）。時計を使っていれば自動で入る。交代では手入力もできる。無ければ null */
   clockSeconds: number | null;
   createdAt: number;
   voidedAt: number | null;

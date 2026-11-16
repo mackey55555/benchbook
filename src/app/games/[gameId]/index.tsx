@@ -9,7 +9,7 @@ import { db } from '@/db/client';
 import { deleteGame, reopenGame } from '@/db/repo';
 import { computeLineupStats, formatClock } from '@/domain/lineup';
 import { RULES, activeEvents, computePeriodScores, computeScore, periodLabel } from '@/domain/rules';
-import { buildBoxScore, describeEvent, type BoxScoreLine } from '@/domain/stats';
+import { buildBoxScore, describeEvent, teamOnlyLine, type BoxScoreLine } from '@/domain/stats';
 import type { Side } from '@/domain/types';
 import { shareImage, shareJson, sharePdf } from '@/lib/share';
 import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
@@ -167,6 +167,22 @@ export default function GameDetailScreen() {
         {lineupCells(isTotal ? null : l.rosterId)}
       </View>
     );
+    // 選手を選ばずに記録した、チームのリバウンドとTO。記録があるときだけ行を出す
+    const teamOnly = teamOnlyLine(team);
+    const teamOnlyRow = (teamOnly.reb > 0 || teamOnly.tov > 0) && (
+      <View style={styles.tr}>
+        <Text style={[styles.td, styles.tdNo]} />
+        <Text style={[styles.td, styles.tdName]} numberOfLines={1}>
+          チーム
+        </Text>
+        {BOX_COLUMNS.map((c) => (
+          <Text key={c.key} style={styles.td}>
+            {['oreb', 'dreb', 'reb', 'tov'].includes(c.key) ? c.value(teamOnly) : ''}
+          </Text>
+        ))}
+        {lineupCells(null)}
+      </View>
+    );
     return (
       <View style={styles.tabBody}>
         {sheet(boxHtml, `${baseName}_boxscore`, false)}
@@ -198,6 +214,7 @@ export default function GameDetailScreen() {
               )}
             </View>
             {team.players.map((l) => line(l))}
+            {teamOnlyRow}
             {line(team.total, true)}
           </View>
         </ScrollView>
