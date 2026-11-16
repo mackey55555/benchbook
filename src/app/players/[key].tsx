@@ -38,7 +38,7 @@ const SHOTS = [
   { label: 'フリースロー', made: 'ftm', att: 'fta' },
 ] as const;
 /** 試合ログの列（成功率は試投数が少なく意味が薄いので出さない） */
-const LOG_COLUMNS = STAT_COLUMNS.filter((c) => c.kind === 'count');
+const LOG_COLUMNS = STAT_COLUMNS.filter((c) => c.kind !== 'pct');
 
 const percent = (v: number | null) => (v === null ? '-' : `${Math.round(v)}%`);
 const shortDate = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
@@ -232,7 +232,9 @@ export default function PlayerScreen() {
                 headWidth={112}
                 onPressRow={(gameId) => router.push(`/games/${gameId}`)}
               />
-              <Text style={styles.note}>新しい順。行をタップすると、その試合を開きます</Text>
+              <Text style={styles.note}>
+                新しい順。行をタップすると、その試合を開きます。出場時間と +/- は、先発と交代を記録した試合だけに出ます
+              </Text>
             </>
           )}
         </>

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   DATE_RANGE_LABELS,
   STAT_COLUMNS,
+  TEAM_STAT_COLUMNS,
   formatStat,
   pct,
   perGame,
@@ -270,7 +271,7 @@ function TeamView({ analysis, mode }: { analysis: TeamAnalysis; mode: StatMode }
           <Text style={[styles.td, styles.th]}>自チーム</Text>
           <Text style={[styles.td, styles.th]}>相手</Text>
         </View>
-        {STAT_COLUMNS.map((c) => (
+        {TEAM_STAT_COLUMNS.map((c) => (
           <View key={c.key} style={styles.tr}>
             <Text style={styles.tdName}>{c.name}</Text>
             <Text num style={styles.td}>
@@ -330,7 +331,9 @@ function PlayersView(props: {
         onSort={onSort}
         onPressRow={(key) => router.push({ pathname: '/players/[key]', params: { key, range } })}
       />
-      <Text style={styles.cardNote}>試合数は、出場登録された試合の数です</Text>
+      <Text style={styles.cardNote}>
+        試合数は、出場登録された試合の数です。MIN（出場時間）と +/- は、先発と交代を記録した試合の分だけを集計します
+      </Text>
     </>
   );
 }

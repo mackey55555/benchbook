@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { formatStat, statValue, type StatColumn, type StatMode } from '@/domain/analysis';
-import type { BoxScoreLine } from '@/domain/stats';
+import { formatStat, statValue, type StatColumn, type StatLine, type StatMode } from '@/domain/analysis';
 
 import { Text } from './Text';
 import { colors, radius } from './theme';
@@ -11,7 +10,7 @@ export interface StatRow {
   key: string;
   /** 左端の固定列に出す内容（選手名、日付など） */
   head: ReactNode;
-  line: BoxScoreLine;
+  line: StatLine;
   /** 1試合平均の分母 */
   games: number;
   /** 項目の前に出す値（試合数など） */

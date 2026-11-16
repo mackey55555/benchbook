@@ -1,4 +1,4 @@
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
@@ -8,43 +8,109 @@ function safeName(name: string): string {
   return name.replace(/[\\/:*?"<>|%#\s]+/g, '_').slice(0, 60) || 'benchbook';
 }
 
-function writeCacheFile(name: string, content: string): File {
-  const file = new File(Paths.cache, name);
-  if (file.exists) file.delete();
-  file.create();
-  file.write(content);
-  return file;
+/** 共有用のファイルを置く場所の名前の先頭 */
+const SHARE_DIR_PREFIX = 'share-';
+
+/**
+ * 共有用の新しい置き場所を作る。
+ * 同じ名前のファイルを「消してから作り直す」と、作り直したはずのファイルが存在しない状態になり、
+ * 2回目以降の共有が「ファイルにアクセスできない」で失敗した。毎回別の場所に書き出して、消す処理を挟まない。
+ * 前回までの置き場所は、ここで片づける（失敗しても共有は続ける）。
+ */
+function newShareDirectory(): Directory {
+  try {
+    for (const entry of new Directory(Paths.cache).list()) {
+      if (entry instanceof Directory && entry.name.startsWith(SHARE_DIR_PREFIX)) entry.delete();
+    }
+  } catch {
+    // 片づけられなくても、キャッシュ領域なのでOSがいずれ消す
+  }
+  const dir = new Directory(Paths.cache, `${SHARE_DIR_PREFIX}${Date.now()}`);
+  dir.create();
+  return dir;
 }
 
 /**
- * ファイルを共有シートに渡す。
- * iOSの共有は、日本語などを含むパスをそのまま渡すと「ファイルにアクセスできない」と失敗することがあるため、
- * パスをパーセントエンコードして渡す。それでも失敗したら、英数字だけの名前に写して渡し直す。
+ * ファイルを共有シートに渡す。候補を順に試し、最初に渡せたものを使う。
+ * 日本語を含む名前のファイルは、端末によって共有シートに断られることがあるので、
+ * 英数字だけの名前の写しと、元のファイルを控えにする。
+ * `File.exists` は日本語を含む名前で正しく判定できないことがあるため、事前の確認には使わない。
+ * すべて失敗したときは、原因を調べられるよう候補ごとの状況をエラーに含める。
  */
-async function shareFile(file: File, fallbackName: string, options: Sharing.SharingOptions): Promise<void> {
-  try {
-    await Sharing.shareAsync(encodeURI(decodeURI(file.uri)), options);
-  } catch {
-    const plain = new File(Paths.cache, fallbackName);
-    if (plain.exists) plain.delete();
-    file.copy(plain);
-    await Sharing.shareAsync(plain.uri, options);
+async function shareFirst(candidates: (File | (() => File))[], options: Sharing.SharingOptions): Promise<void> {
+  const failures: string[] = [];
+  for (const candidate of candidates) {
+    let label = '';
+    try {
+      // 関数で渡された候補は、順番が来たときに初めて用意する（名前の付け替えなど）
+      const file = typeof candidate === 'function' ? candidate() : candidate;
+      label = file.name;
+      await Sharing.shareAsync(encodeURI(decodeURI(file.uri)), options);
+      return;
+    } catch (e) {
+      failures.push(`${label || '準備'}: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
+  throw new Error(`共有シートに渡せませんでした（${failures.join(' ／ ')}）`);
+}
+
+/** 共有用の置き場所に、指定した名前で写しを作る。作れなければ null */
+function copyInto(dir: Directory, source: File, name: string): File | null {
+  try {
+    const target = new File(dir, name);
+    source.copy(target);
+    return target;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ファイルの名前を、その場で付け替える。同じ名前の古いファイルが残っていれば先に消す。
+ * 写しを渡せない端末（iPhoneで確認）でも、書き出されたファイル自体は渡せるので、名前だけ整える。
+ */
+function renamed(file: File, name: string): File {
+  if (file.name === name) return file;
+  try {
+    new File(file.parentDirectory, name).delete();
+  } catch {
+    // 無ければ何もしない
+  }
+  file.rename(name);
+  return file;
 }
 
 /** JSONを共有シートに渡す */
 export async function shareJson(data: BackupData, baseName: string): Promise<void> {
-  const file = writeCacheFile(`${safeName(baseName)}.json`, JSON.stringify(data));
-  await shareFile(file, 'benchbook.json', { mimeType: 'application/json', UTI: 'public.json' });
+  const dir = newShareDirectory();
+  const plain = new File(dir, 'benchbook.json');
+  plain.create();
+  plain.write(JSON.stringify(data));
+  const named = copyInto(dir, plain, `${safeName(baseName)}.json`);
+  await shareFirst([named, plain].filter((f): f is File => f !== null), {
+    mimeType: 'application/json',
+    UTI: 'public.json',
+  });
 }
 
 /** HTMLをA4のPDFにして共有シートに渡す */
 export async function sharePdf(html: string, baseName: string): Promise<void> {
   const printed = await Print.printToFileAsync({ html, width: 595, height: 842 });
-  const target = new File(Paths.cache, `${safeName(baseName)}.pdf`);
-  if (target.exists) target.delete();
-  new File(printed.uri).move(target);
-  await shareFile(target, 'benchbook.pdf', { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
+  // 印刷機能が書き出したファイルはそのまま残し、わかりやすい名前の写しを作って渡す。
+  // 写しを渡せないときは、書き出されたファイルそのものを渡す（名前は機械的なものになる）
+  const original = new File(printed.uri);
+  const dir = newShareDirectory();
+  const named = copyInto(dir, original, `${safeName(baseName)}.pdf`);
+  const plain = copyInto(dir, original, 'benchbook.pdf');
+  await shareFirst(
+    [
+      ...[named, plain].filter((f): f is File => f !== null),
+      () => renamed(original, `${safeName(baseName)}.pdf`),
+      () => renamed(original, 'benchbook.pdf'),
+      original,
+    ],
+    { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' },
+  );
 }
 
 export async function shareImage(uri: string): Promise<void> {

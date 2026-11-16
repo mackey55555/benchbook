@@ -247,3 +247,48 @@ describe('共有用シート（HTML）', () => {
     expect(out).toContain('2026-10-01');
   });
 });
+
+describe('出場時間と +/-', () => {
+  const withStarters = (numbers: string[]) =>
+    [...roster('A', ['4', '5']), ...roster('B', ['9'])].map((r) => ({
+      ...r,
+      playerId: r.side === 'A' ? `p${r.number}` : null,
+      isStarter: r.side === 'A' && numbers.includes(r.number),
+    }));
+  const base = { ownSide: 'A' as const, teamAName: 'A組', teamBName: 'B組' };
+
+  it('先発と交代を記録した試合の分だけを集計し、平均もその試合数で割る', () => {
+    const tracked: AnalysisGame = {
+      game: { id: 'g1', date: '2026-10-01', ...base },
+      roster: withStarters(['4']),
+      events: [
+        ev('FG2_MADE', 'A', 'A4', 1),
+        ev('FG3_MADE', 'B', 'B9', 1),
+        ev('PERIOD_END', null, null, 1),
+        ev('PERIOD_END', null, null, 2),
+        ev('PERIOD_END', null, null, 3),
+        ev('PERIOD_END', null, null, 4),
+      ],
+    };
+    const untracked: AnalysisGame = {
+      game: { id: 'g2', date: '2026-10-08', ...base },
+      roster: withStarters([]),
+      events: [ev('FG2_MADE', 'A', 'A4', 1)],
+    };
+    const a = analyzeTeam([tracked, untracked]);
+    const four = a.players.find((p) => p.key === 'p4')!;
+    expect([four.games, four.line.lineupGames, four.line.seconds, four.line.plusMinus]).toEqual([2, 1, 2400, -1]);
+    const min = statColumn('min');
+    const pm = statColumn('pm');
+    expect(statValue(min, four.line, four.games, 'avg')).toBe(2400);
+    expect(formatStat(min, 2400, 'avg')).toBe('40:00');
+    expect(formatStat(pm, statValue(pm, four.line, four.games, 'total'), 'total')).toBe('-1');
+    expect(formatStat(pm, 2.5, 'avg')).toBe('+2.5');
+    // 交代を記録していない試合の行には出ない
+    expect(four.log.map((l) => min.get(l.line))).toEqual([2400, null]);
+    // 一度も記録のない選手とチーム合計は「-」
+    const five = a.players.find((p) => p.key === 'p5')!;
+    expect(statValue(min, five.line, five.games, 'total')).toBe(0);
+    expect(formatStat(min, statValue(min, a.own, a.games, 'total'), 'total')).toBe('-');
+  });
+});
