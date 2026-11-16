@@ -49,6 +49,12 @@ Benchbook は、バスケットボールのベンチで「控えのスコア」�
 
 バスケ,バスケットボール,スコア,スコアシート,スコアブック,ミニバス,スタッツ,記録,マネージャー,ボックススコア
 
+## URL
+
+- 製品ページ（マーケティングURL）：https://arti-lab.jp/products/benchbook
+- サポートURL：https://arti-lab.jp/products/benchbook/support
+- プライバシーポリシーURL：https://arti-lab.jp/products/benchbook/privacy
+
 ## カテゴリ
 
 スポーツ
@@ -64,6 +70,16 @@ Benchbook は、バスケットボールのベンチで「控えのスコア」�
 ## プライバシー表示
 
 データの収集なし
+
+## スクリーンショット
+
+[images/](images/) にある。6.7インチ（1290×2796）用で、01〜06 の順に登録する。
+
+- `01-hero.png`〜`06-offline.png`：App Store 掲載用
+- `ogp.png`（1200×630）：サイト・SNSのリンク用
+- `square.png`（1080×1080）：SNS投稿用
+
+画面はAndroidエミュレータで撮影し、上部のステータスバーをiPhone風に描き直している。数値はデモ用のデータ。
 
 ## 審査メモ（審査担当者向け、英語）
 
