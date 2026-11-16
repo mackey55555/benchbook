@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text } from 'react-native';
+import { Alert, ScrollView, StyleSheet } from 'react-native';
 
 import { exportAll, importBackup, parseBackup } from '@/db/backup';
 import { db } from '@/db/client';
 import { RepoError } from '@/db/repo';
 import { pickJsonText, shareJson } from '@/lib/share';
 import { Button, Card, SectionTitle } from '@/ui/components';
+import { Text } from '@/ui/Text';
 import { colors } from '@/ui/theme';
 
 export default function BackupScreen() {

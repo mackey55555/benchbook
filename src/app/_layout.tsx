@@ -1,20 +1,46 @@
+import { BarlowCondensed_700Bold } from '@expo-google-fonts/barlow-condensed';
+import {
+  MPLUSRounded1c_500Medium,
+  MPLUSRounded1c_700Bold,
+  MPLUSRounded1c_800ExtraBold,
+} from '@expo-google-fonts/m-plus-rounded-1c';
+import { Ionicons } from '@expo/vector-icons';
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
+import { useFonts } from 'expo-font';
 import { Stack, usePathname } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { expoDb } from '@/db/client';
-import { colors } from '@/ui/theme';
+import { Text } from '@/ui/Text';
+import { colors, fonts } from '@/ui/theme';
 
 import migrations from '../../drizzle/migrations';
+
+// フォントとDBの準備が終わるまでスプラッシュを出したままにする
+void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 /**
  * 画面の向きは画面単位で制御する。既定は縦向き、試合中入力とQ照合は横向き固定。
  */
 export default function RootLayout() {
   const { success, error } = useMigrations(expoDb, migrations);
+  // フォントの読み込みに失敗しても、端末標準のフォントで続行する
+  const [fontsLoaded, fontError] = useFonts({
+    MPLUSRounded1c_500Medium,
+    MPLUSRounded1c_700Bold,
+    MPLUSRounded1c_800ExtraBold,
+    BarlowCondensed_700Bold,
+    ...Ionicons.font,
+  });
+  const fontsReady = fontsLoaded || fontError !== null;
+  const ready = (success || error !== undefined) && fontsReady;
+  useEffect(() => {
+    if (ready) void SplashScreen.hideAsync().catch(() => undefined);
+  }, [ready]);
 
   // Stack.Screen の orientation は画面本体にしか効かず、iOSではアラートを出すたびに
   // 端末の向きへ回転してしまう。アプリ全体の向きも画面に合わせて固定する。
@@ -36,7 +62,7 @@ export default function RootLayout() {
       </View>
     );
   }
-  if (!success) return <View style={styles.center} />;
+  if (!success || !fontsReady) return <View style={styles.center} />;
 
   return (
     <>
@@ -45,10 +71,15 @@ export default function RootLayout() {
         screenOptions={{
           orientation: 'portrait',
           headerBackTitle: '戻る',
+          headerStyle: { backgroundColor: colors.bg },
+          headerShadowVisible: false,
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontFamily: fonts.heavy, color: colors.text },
+          headerBackTitleStyle: { fontFamily: fonts.bold },
           contentStyle: { backgroundColor: colors.bg },
         }}
       >
-        <Stack.Screen name="index" options={{ title: 'Benchbook' }} />
+        <Stack.Screen name="index" options={{ title: 'Benchbook', headerShown: false }} />
         <Stack.Screen name="teams/index" options={{ title: 'チーム管理' }} />
         <Stack.Screen name="teams/[teamId]" options={{ title: 'チーム' }} />
         <Stack.Screen name="backup" options={{ title: 'バックアップ' }} />
@@ -68,7 +99,7 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
+  center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
   errorTitle: { fontSize: 17, fontWeight: '700' },
   errorBody: { fontSize: 13, color: colors.sub },
 });

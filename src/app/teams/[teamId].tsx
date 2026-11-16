@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { db } from '@/db/client';
 import {
@@ -13,6 +13,7 @@ import {
   updatePlayer,
 } from '@/db/repo';
 import { Button, CommitInput, Row, SectionTitle, styles as ui } from '@/ui/components';
+import { Text } from '@/ui/Text';
 import { colors } from '@/ui/theme';
 import { attempt, useRefresh } from '@/ui/useGame';
 

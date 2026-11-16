@@ -8,7 +8,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
@@ -33,6 +32,7 @@ import {
 import { RULES } from '@/domain/rules';
 import type { Side } from '@/domain/types';
 import { Button, Card, Chip, CommitInput, Row, SectionTitle, Segmented, styles as ui } from '@/ui/components';
+import { Text } from '@/ui/Text';
 import { colors, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 
@@ -287,7 +287,7 @@ export default function PrepScreen() {
 
         {isPrep ? (
           <>
-            <Button title="試合開始" onPress={start} style={styles.start} />
+            <Button title="試合開始" variant="accent" onPress={start} style={styles.start} />
             <Button title="この試合を削除" variant="ghost" onPress={confirmDelete} />
           </>
         ) : (
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
   removeText: { fontSize: 22, color: colors.sub },
   start: { marginTop: 12, minHeight: 56 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  sheet: { width: '100%', maxWidth: 420, maxHeight: '80%', backgroundColor: colors.card, borderRadius: 14, padding: 16, gap: 10 },
+  sheet: { width: '100%', maxWidth: 420, maxHeight: '80%', backgroundColor: colors.card, borderRadius: 20, padding: 18, gap: 10 },
   sheetTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   sheetList: { flexGrow: 0 },
   sheetRow: {

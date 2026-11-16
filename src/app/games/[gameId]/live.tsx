@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
@@ -27,7 +27,8 @@ import {
 } from '@/domain/types';
 import { Button, Chip, Row } from '@/ui/components';
 import { DEFAULT_FT, EventLogSheet } from '@/ui/EventLogSheet';
-import { colors, sideBg, sideColor } from '@/ui/theme';
+import { Text } from '@/ui/Text';
+import { colors, radius, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 
 const BENCH = 'bench';
@@ -236,7 +237,7 @@ export default function LiveScreen() {
         onPress={() => select(side, p.roster.id)}
         style={[
           styles.cell,
-          { backgroundColor: sideBg(side), borderColor: sideBg(side) },
+          styles.player,
           warn && styles.cellWarn,
           tracked && p.onCourt && !out && !warn && { borderColor: sideColor(side) },
           benched && styles.cellBenched,
@@ -245,10 +246,10 @@ export default function LiveScreen() {
         ]}
       >
         <Text
+          num
           style={[
             styles.number,
             benched && styles.numberBenched,
-            warn && { color: colors.danger },
             active && { color: colors.primaryText },
             out && { color: colors.disabled },
           ]}
@@ -265,7 +266,7 @@ export default function LiveScreen() {
             <Text
               style={[
                 styles.foulCount,
-                warn && { color: colors.danger },
+                warn && { color: colors.warn },
                 active && { color: colors.primaryText },
               ]}
             >
@@ -391,9 +392,15 @@ export default function LiveScreen() {
         <View style={styles.center}>
           <View style={styles.centerHeader}>
             <Row style={styles.scoreRow}>
-              <Text style={[styles.score, { color: sideColor('A') }]}>{state.A.score}</Text>
-              <Text style={styles.scoreSep}>-</Text>
-              <Text style={[styles.score, { color: sideColor('B') }]}>{state.B.score}</Text>
+              <Text num style={[styles.score, { color: sideColor('A') }]}>
+                {state.A.score}
+              </Text>
+              <Text num style={styles.scoreSep}>
+                -
+              </Text>
+              <Text num style={[styles.score, { color: sideColor('B') }]}>
+                {state.B.score}
+              </Text>
             </Row>
             <Row style={styles.controls}>
               <Text style={styles.period}>{periodLabel(period)}</Text>
@@ -437,11 +444,12 @@ export default function LiveScreen() {
                       styles.cell,
                       styles.action,
                       a.tone === 'made' && styles.actionMade,
+                      a.tone === 'miss' && styles.actionMiss,
                       disabled && styles.actionDisabled,
                       pressed && styles.pressed,
                     ]}
                   >
-                    <Text style={[styles.actionText, a.tone === 'made' && { color: colors.ok }]}>{a.label}</Text>
+                    <Text style={[styles.actionText, a.tone === 'made' && { color: colors.primaryText }]}>{a.label}</Text>
                   </Pressable>
                 );
               })}
@@ -552,7 +560,7 @@ export default function LiveScreen() {
               <Text style={[styles.sheetTitle, styles.flex, adding && { color: sideColor(adding.side) }]} numberOfLines={1}>
                 {adding?.side} に背番号を追加
               </Text>
-              <Text style={styles.padDisplay}>{adding?.number || '–'}</Text>
+              <Text num style={styles.padDisplay}>{adding?.number || '–'}</Text>
             </Row>
             <View style={styles.padGrid}>
               {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'].map((k) => (
@@ -569,7 +577,7 @@ export default function LiveScreen() {
                   }
                   style={({ pressed }) => [styles.padKey, pressed && styles.pressed]}
                 >
-                  <Text style={styles.padKeyText}>{k}</Text>
+                  <Text num style={styles.padKeyText}>{k}</Text>
                 </Pressable>
               ))}
             </View>
@@ -633,7 +641,7 @@ export default function LiveScreen() {
               </View>
               <Row>
                 <Text style={styles.sheetLabel}>残り</Text>
-                <Text style={styles.subClock}>{clockDigitsLabel(subSheet.clock)}</Text>
+                <Text num style={styles.subClock}>{clockDigitsLabel(subSheet.clock)}</Text>
                 <View style={[styles.padGrid, styles.flex]}>
                   {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'].map((k) => (
                     <Pressable
@@ -652,7 +660,7 @@ export default function LiveScreen() {
                       }
                       style={({ pressed }) => [styles.subKey, pressed && styles.pressed]}
                     >
-                      <Text style={styles.subKeyText}>{k}</Text>
+                      <Text num style={styles.subKeyText}>{k}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -683,15 +691,15 @@ export default function LiveScreen() {
   );
 }
 
-const GAP = 4;
+const GAP = 5;
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
-  main: { flex: 1, flexDirection: 'row', gap: 8, paddingHorizontal: 4, paddingTop: 2 },
+  main: { flex: 1, flexDirection: 'row', gap: 10, paddingHorizontal: 4, paddingTop: 2 },
   team: { flex: 1, gap: GAP },
   center: { flex: 1.15, gap: GAP },
-  teamHeader: { height: 50, justifyContent: 'space-between' },
+  teamHeader: { height: 60, justifyContent: 'space-between' },
   teamName: { fontSize: 15, fontWeight: '800' },
   teamBadges: { justifyContent: 'space-between' },
   badge: {
@@ -699,69 +707,77 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     backgroundColor: colors.disabledBg,
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 9,
     overflow: 'hidden',
-    fontVariant: ['tabular-nums'],
   },
   badgeDanger: { color: colors.primaryText, backgroundColor: colors.danger },
   toButton: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 11,
     paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.card,
+    borderRadius: 9,
+    backgroundColor: colors.accentBg,
   },
-  toButtonDisabled: { borderColor: colors.line, backgroundColor: colors.disabledBg },
-  toText: { fontSize: 13, fontWeight: '700', color: colors.primary, fontVariant: ['tabular-nums'] },
+  toButtonDisabled: { backgroundColor: colors.disabledBg },
+  toText: { fontSize: 13, fontWeight: '800', color: colors.text },
   gridRow: { flex: 1, flexDirection: 'row', gap: GAP },
   cell: {
     flex: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cellEmpty: { flex: 1 },
-  cellWarn: { backgroundColor: colors.dangerBg, borderColor: colors.danger },
+  player: { backgroundColor: colors.card, borderColor: colors.card },
+  cellWarn: { backgroundColor: colors.warnBg, borderColor: colors.warnBg },
   cellOut: { backgroundColor: colors.disabledBg, borderColor: colors.disabledBg },
-  number: { fontSize: 24, fontWeight: '800', color: colors.text, fontVariant: ['tabular-nums'] },
-  foulCount: { position: 'absolute', top: 2, right: 5, fontSize: 11, fontWeight: '700', color: colors.sub },
+  number: { fontSize: 28, lineHeight: 30, color: colors.text },
+  foulCount: { position: 'absolute', top: 2, right: 6, fontSize: 11, fontWeight: '700', color: colors.sub },
   outText: { position: 'absolute', bottom: 1, fontSize: 10, fontWeight: '700', color: colors.sub },
-  bench: { backgroundColor: colors.card, borderColor: colors.line },
+  bench: { backgroundColor: colors.card, borderColor: colors.card },
   benchText: { fontSize: 14, fontWeight: '700', color: colors.text },
-  centerHeader: { height: 50, justifyContent: 'space-between' },
-  scoreRow: { justifyContent: 'center', gap: 10 },
-  score: { fontSize: 28, lineHeight: 30, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  scoreSep: { fontSize: 22, lineHeight: 30, color: colors.sub },
-  controls: { justifyContent: 'center', gap: 6 },
-  period: { fontSize: 15, fontWeight: '800', color: colors.text, marginRight: 4 },
+  centerHeader: { height: 60, justifyContent: 'space-between' },
+  scoreRow: { justifyContent: 'center', gap: 12 },
+  score: { fontSize: 34, lineHeight: 34 },
+  scoreSep: { fontSize: 24, lineHeight: 34, color: colors.sub },
+  controls: { justifyContent: 'center', alignItems: 'center', gap: 6 },
+  period: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.accentText,
+    backgroundColor: colors.accent,
+    paddingHorizontal: 10,
+    lineHeight: 20,
+    height: 22,
+    borderRadius: 9,
+    overflow: 'hidden',
+    marginRight: 2,
+  },
   control: {
     paddingHorizontal: 10,
     height: 22,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderRadius: 9,
     backgroundColor: colors.card,
     justifyContent: 'center',
   },
-  controlOn: { backgroundColor: colors.warn, borderColor: colors.warn },
+  controlOn: { backgroundColor: colors.primary },
   controlText: { fontSize: 12, fontWeight: '700', color: colors.text },
-  action: { backgroundColor: colors.card, borderColor: colors.line },
-  actionMade: { backgroundColor: colors.okBg, borderColor: colors.okBg },
+  action: { backgroundColor: colors.card, borderColor: colors.card },
+  actionMade: { backgroundColor: colors.primary, borderColor: colors.primary },
+  actionMiss: { borderColor: colors.primary },
   actionDisabled: { opacity: 0.35 },
   actionText: { fontSize: 17, fontWeight: '800', color: colors.text },
   pressed: { opacity: 0.5 },
-  foul: { backgroundColor: colors.dangerBg, borderColor: colors.danger },
-  foulText: { fontSize: 18, fontWeight: '900', color: colors.danger },
-  foulHint: { fontSize: 10, color: colors.danger },
-  logBar: { height: 40, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingVertical: 3 },
+  foul: { backgroundColor: colors.dangerBg, borderColor: colors.dangerBg },
+  foulText: { fontSize: 18, fontWeight: '800', color: colors.dangerInk },
+  foulHint: { fontSize: 10, color: colors.dangerInk },
+  logBar: { height: 42, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingVertical: 3 },
   undo: {
     height: '100%',
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: 12,
     backgroundColor: colors.warnBg,
     justifyContent: 'center',
   },
@@ -771,63 +787,49 @@ const styles = StyleSheet.create({
     flex: 1,
     height: '100%',
     justifyContent: 'center',
-    paddingHorizontal: 10,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     backgroundColor: colors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
   },
   recentText: { fontSize: 13, color: colors.text },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 16 },
-  sheet: { width: 380, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 16, gap: 12 },
-  sheetTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
-  sheetLabel: { width: 44, fontSize: 14, color: colors.sub },
-  cellBenched: { opacity: 0.45 },
-  numberBenched: { fontSize: 18, fontWeight: '600' },
-  subSheet: { width: 640, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 12, gap: 8 },
-  subCount: { fontSize: 16, fontWeight: '800', color: colors.text, fontVariant: ['tabular-nums'] },
-  subClock: {
-    width: 76,
-    textAlign: 'center',
-    fontSize: 24,
-    fontWeight: '900',
-    color: colors.text,
-    fontVariant: ['tabular-nums'],
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(22,32,58,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
   },
+  sheet: { width: 380, maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 18, gap: 12 },
+  sheetTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
+  sheetLabel: { width: 44, fontSize: 14, color: colors.sub },
+  cellBenched: { backgroundColor: colors.disabledBg, borderColor: colors.disabledBg, opacity: 0.75 },
+  numberBenched: { fontSize: 22, color: colors.sub },
+  subSheet: { width: 640, maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 14, gap: 8 },
+  subCount: { fontSize: 16, fontWeight: '800', color: colors.text },
+  subClock: { width: 76, textAlign: 'center', fontSize: 30, color: colors.text },
   subKey: {
     width: 38,
     height: 40,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderRadius: 10,
     backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  subKeyText: { fontSize: 18, fontWeight: '700', color: colors.text },
+  subKeyText: { fontSize: 22, color: colors.text },
   subHint: { fontSize: 11, color: colors.sub },
   subError: { fontSize: 13, fontWeight: '700', color: colors.danger },
-  addCell: { backgroundColor: 'transparent', borderColor: colors.line, borderStyle: 'dashed' },
+  addCell: { backgroundColor: 'transparent', borderColor: colors.disabled, borderStyle: 'dashed' },
   addText: { fontSize: 13, fontWeight: '700', color: colors.sub },
-  padSheet: { width: 440, maxWidth: '100%', backgroundColor: colors.card, borderRadius: 14, padding: 14, gap: 10 },
-  padDisplay: {
-    minWidth: 64,
-    textAlign: 'center',
-    fontSize: 28,
-    fontWeight: '900',
-    color: colors.text,
-    fontVariant: ['tabular-nums'],
-  },
+  padSheet: { width: 440, maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 16, gap: 10 },
+  padDisplay: { minWidth: 64, textAlign: 'center', fontSize: 34, color: colors.text },
   padGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   padKey: {
     width: 62,
     height: 52,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderRadius: 12,
     backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  padKeyText: { fontSize: 22, fontWeight: '700', color: colors.text },
+  padKeyText: { fontSize: 26, color: colors.text },
 });

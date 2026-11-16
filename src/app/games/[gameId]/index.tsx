@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import { WebView } from 'react-native-webview';
 
@@ -16,7 +16,8 @@ import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Button, Card, Chip, Row, Segmented } from '@/ui/components';
 import { EventLogSheet } from '@/ui/EventLogSheet';
-import { colors, sideColor } from '@/ui/theme';
+import { Text } from '@/ui/Text';
+import { colors, fonts, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 
 type Tab = 'running' | 'box' | 'plays' | 'periods';
@@ -345,7 +346,7 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, color: colors.sub },
   scoreRow: { gap: 10 },
   teamName: { flex: 1, fontSize: 15, fontWeight: '700', textAlign: 'center' },
-  score: { fontSize: 32, fontWeight: '900', color: colors.text, fontVariant: ['tabular-nums'] },
+  score: { fontSize: 44, lineHeight: 46, fontFamily: fonts.num, color: colors.text },
   tabBody: { gap: 10 },
   filters: { flexGrow: 0 },
   sheet: { backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line },

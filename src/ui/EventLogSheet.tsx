@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
@@ -16,6 +16,7 @@ import {
 } from '@/domain/types';
 
 import { Button, Chip, Row, SectionTitle, Segmented } from './components';
+import { Text } from './Text';
 import { colors, sideColor } from './theme';
 import { attempt } from './useGame';
 

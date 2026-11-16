@@ -1,15 +1,18 @@
+import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Updates from 'expo-updates';
 import { useCallback, useMemo, useState } from 'react';
-import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
 import { createGame, getLiveGame, isPeriodEnded, listEvents, listGames } from '@/db/repo';
 import type { Game } from '@/db/schema';
 import { periodLabel } from '@/domain/rules';
-import { Button, Card, Row, SectionTitle } from '@/ui/components';
-import { colors } from '@/ui/theme';
+import { Button, Card, SectionTitle } from '@/ui/components';
+import { Text } from '@/ui/Text';
+import { colors, radius } from '@/ui/theme';
 import { useRefresh } from '@/ui/useGame';
 
 // 開発ビルド・Expo Go では expo-updates が無効で、確認APIは reject される
@@ -23,10 +26,9 @@ let lastAutoCheckAt = 0;
 // 取得済みの更新（再読み込みで適用できる）。画面を行き来しても案内を出し続ける
 let updateReady = false;
 
-const STATUS_LABEL: Record<Game['status'], string> = { prep: '準備中', live: '進行中', finished: '終了' };
-
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [version] = useRefresh();
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -112,8 +114,26 @@ export default function HomeScreen() {
     router.push(`/games/${game.id}/prep`);
   };
 
+  const badge = ({ game, score }: (typeof games)[number]) => {
+    if (game.status === 'prep') return { label: '準備', bg: colors.accentBg, fg: colors.accentInk };
+    if (game.status === 'live') return { label: '試合中', bg: colors.accent, fg: colors.accentText };
+    if (score.A === score.B) return { label: '引分', bg: colors.disabledBg, fg: colors.mute };
+    const other = game.ownSide === 'A' ? 'B' : 'A';
+    return score[game.ownSide] > score[other]
+      ? { label: '勝ち', bg: colors.okBg, fg: colors.ok }
+      : { label: '負け', bg: colors.disabledBg, fg: colors.mute };
+  };
+
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
+    <ScrollView
+      contentInsetAdjustmentBehavior="never"
+      contentContainerStyle={[styles.container, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 32 }]}
+    >
+      <View style={styles.header}>
+        <Image source={require('../../assets/mark.png')} style={styles.mark} accessibilityIgnoresInvertColors />
+        <Text style={styles.wordmark}>Benchbook</Text>
+      </View>
+
       {ready && (
         <View style={styles.update}>
           <View style={styles.flex}>
@@ -129,56 +149,96 @@ export default function HomeScreen() {
       )}
 
       {live && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="進行中の試合を再開"
-          onPress={() => openGame(live.game)}
-          style={({ pressed }) => [styles.resume, pressed && { opacity: 0.8 }]}
-        >
-          <Text style={styles.resumeLabel}>進行中の試合を再開</Text>
-          <Text style={styles.resumeTeams} numberOfLines={1}>
-            {live.game.teamAName || 'A'} vs {live.game.teamBName || 'B'}
-          </Text>
-          <Text style={styles.resumeScore}>
-            {live.score.A} - {live.score.B}　{periodLabel(live.game.currentPeriod)}
-          </Text>
-        </Pressable>
+        <View style={styles.resume}>
+          <View style={styles.resumeTop}>
+            <View style={styles.dot} />
+            <Text style={styles.resumeLabel}>進行中の試合</Text>
+            <Text style={styles.resumePeriod}>{periodLabel(live.game.currentPeriod)}</Text>
+          </View>
+          <View style={styles.resumeScores}>
+            <View style={styles.flex}>
+              <Text style={styles.resumeTeam} numberOfLines={1}>
+                {live.game.teamAName || 'チームA'}
+              </Text>
+              <Text num style={styles.resumeScore}>
+                {live.score.A}
+              </Text>
+            </View>
+            <Text num style={styles.resumeSep}>
+              -
+            </Text>
+            <View style={[styles.flex, styles.right]}>
+              <Text style={styles.resumeTeam} numberOfLines={1}>
+                {live.game.teamBName || 'チームB'}
+              </Text>
+              <Text num style={styles.resumeScore}>
+                {live.score.B}
+              </Text>
+            </View>
+          </View>
+          <Button title="入力に戻る" variant="accent" onPress={() => openGame(live.game)} />
+        </View>
       )}
 
-      <Button title="＋ 新規試合" onPress={newGame} />
-      <Row>
-        <Button title="チーム管理" variant="secondary" onPress={() => router.push('/teams')} style={styles.flex} />
-        <Button title="バックアップ" variant="secondary" onPress={() => router.push('/backup')} style={styles.flex} />
-      </Row>
+      <View style={styles.tiles}>
+        {(
+          [
+            { label: '新規試合', icon: 'add', bg: colors.accentBg, onPress: newGame },
+            { label: 'チーム', icon: 'people-outline', bg: colors.teamABg, onPress: () => router.push('/teams') },
+            { label: 'バックアップ', icon: 'share-outline', bg: colors.teamBBg, onPress: () => router.push('/backup') },
+          ] as const
+        ).map((t) => (
+          <Pressable
+            key={t.label}
+            accessibilityRole="button"
+            accessibilityLabel={t.label}
+            onPress={t.onPress}
+            style={({ pressed }) => [styles.tile, pressed && { opacity: 0.6 }]}
+          >
+            <View style={[styles.tileIcon, { backgroundColor: t.bg }]}>
+              <Ionicons name={t.icon} size={22} color={colors.text} />
+            </View>
+            <Text style={styles.tileLabel}>{t.label}</Text>
+          </Pressable>
+        ))}
+      </View>
 
-      <SectionTitle>試合一覧</SectionTitle>
-      {games.length === 0 && <Text style={styles.empty}>まだ試合がありません</Text>}
-      {games.map(({ game, score }) => (
-        <Pressable
-          key={game.id}
-          accessibilityRole="button"
-          onPress={() => openGame(game)}
-          style={({ pressed }) => [styles.gameRow, pressed && { opacity: 0.6 }]}
-        >
-          <View style={styles.flex}>
-            <Text style={styles.gameDate}>
-              {game.date}
-              {game.leagueName ? `　${game.leagueName}` : ''}
-            </Text>
-            <Text style={styles.gameTeams} numberOfLines={1}>
-              {game.teamAName || 'A'} vs {game.teamBName || 'B'}
-            </Text>
-          </View>
-          {game.status !== 'prep' && (
-            <Text style={styles.gameScore}>
-              {score.A} - {score.B}
-            </Text>
-          )}
-          <Text style={[styles.status, game.status === 'live' && styles.statusLive]}>
-            {STATUS_LABEL[game.status]}
-          </Text>
-        </Pressable>
-      ))}
+      <SectionTitle>これまでの試合</SectionTitle>
+      {games.length === 0 && (
+        <Text style={styles.empty}>まだ試合がありません。「新規試合」から始めましょう</Text>
+      )}
+      {games.map((row) => {
+        const { game, score } = row;
+        const b = badge(row);
+        return (
+          <Pressable
+            key={game.id}
+            accessibilityRole="button"
+            onPress={() => openGame(game)}
+            style={({ pressed }) => [styles.gameRow, pressed && { opacity: 0.6 }]}
+          >
+            <View style={[styles.badge, { backgroundColor: b.bg }]}>
+              <Text style={[styles.badgeText, { color: b.fg }]}>{b.label}</Text>
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.gameDate} numberOfLines={1}>
+                {game.date}
+                {game.leagueName ? `・${game.leagueName}` : ''}
+              </Text>
+              <Text style={styles.gameTeams} numberOfLines={1}>
+                {game.teamAName || 'A'} vs {game.teamBName || 'B'}
+              </Text>
+            </View>
+            {game.status === 'prep' ? (
+              <Ionicons name="chevron-forward" size={20} color={colors.sub} />
+            ) : (
+              <Text num style={styles.gameScore}>
+                {score.A}-{score.B}
+              </Text>
+            )}
+          </Pressable>
+        );
+      })}
 
       <SectionTitle>アプリ情報</SectionTitle>
       <Card>
@@ -208,49 +268,67 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12, paddingBottom: 40 },
-  flex: { flex: 1 },
+  container: { padding: 20, gap: 14, paddingBottom: 40 },
+  flex: { flex: 1, minWidth: 0 },
+  right: { alignItems: 'flex-end' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 2 },
+  mark: { width: 36, height: 36, borderRadius: 10 },
+  wordmark: { fontSize: 26, fontWeight: '800', color: colors.text },
   update: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: colors.okBg,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.ok,
+    backgroundColor: colors.accentBg,
+    borderRadius: radius.lg,
+    padding: 16,
   },
-  updateTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  updateTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   updateBody: { fontSize: 12, color: colors.sub },
-  resume: { backgroundColor: colors.primary, borderRadius: 14, padding: 18, gap: 4 },
-  resumeLabel: { color: colors.primaryText, fontSize: 14, fontWeight: '700' },
-  resumeTeams: { color: colors.primaryText, fontSize: 18, fontWeight: '600' },
-  resumeScore: { color: colors.primaryText, fontSize: 34, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  resume: { backgroundColor: colors.primary, borderRadius: radius.xl, padding: 20, gap: 12 },
+  resumeTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
+  resumeLabel: { flex: 1, color: colors.onInkAccent, fontSize: 13, fontWeight: '700' },
+  resumePeriod: {
+    color: colors.primaryText,
+    fontSize: 13,
+    fontWeight: '700',
+    backgroundColor: colors.inkSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  resumeScores: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  resumeTeam: { color: colors.primaryText, fontSize: 14, fontWeight: '700' },
+  resumeScore: { color: colors.primaryText, fontSize: 60, lineHeight: 64 },
+  resumeSep: { color: colors.onInkMute, fontSize: 30 },
+  tiles: { flexDirection: 'row', gap: 10 },
+  tile: {
+    flex: 1,
+    height: 96,
+    borderRadius: radius.lg,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  tileIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  tileLabel: { fontSize: 13, fontWeight: '700', color: colors.text },
   empty: { color: colors.sub, fontSize: 14, paddingVertical: 12 },
   gameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 14,
-    minHeight: 56,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
+    borderRadius: radius.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 68,
   },
+  badge: { width: 44, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  badgeText: { fontSize: 13, fontWeight: '800' },
   gameDate: { fontSize: 12, color: colors.sub },
-  gameTeams: { fontSize: 16, fontWeight: '600', color: colors.text },
-  gameScore: { fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'], color: colors.text },
-  status: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.sub,
-    backgroundColor: colors.disabledBg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  statusLive: { color: colors.ok, backgroundColor: colors.okBg },
+  gameTeams: { fontSize: 15, fontWeight: '700', color: colors.text },
+  gameScore: { fontSize: 26, color: colors.text },
   info: { fontSize: 12, color: colors.sub },
 });
