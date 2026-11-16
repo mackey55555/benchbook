@@ -11,7 +11,7 @@ import { Stack, usePathname } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { expoDb } from '@/db/client';
@@ -20,7 +20,9 @@ import { colors, fonts } from '@/ui/theme';
 
 import migrations from '../../drizzle/migrations';
 
-// フォントとDBの準備が終わるまでスプラッシュを出したままにする
+// フォントとDBの準備が終わるまでスプラッシュを出したままにする。
+// 準備が一瞬で終わってもロゴが見えるよう、最低でもこの時間は表示する
+const SPLASH_MIN_MS = 1500;
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 /**
@@ -37,7 +39,12 @@ export default function RootLayout() {
     ...Ionicons.font,
   });
   const fontsReady = fontsLoaded || fontError !== null;
-  const ready = (success || error !== undefined) && fontsReady;
+  const [minTimePassed, setMinTimePassed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setMinTimePassed(true), SPLASH_MIN_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  const ready = (success || error !== undefined) && fontsReady && minTimePassed;
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync().catch(() => undefined);
   }, [ready]);

@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     minHeight: 68,
   },
-  badge: { width: 44, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  badge: { width: 52, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   badgeText: { fontSize: 13, fontWeight: '800' },
   gameDate: { fontSize: 12, color: colors.sub },
   gameTeams: { fontSize: 15, fontWeight: '700', color: colors.text },

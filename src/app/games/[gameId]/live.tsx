@@ -1,9 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
 import {
@@ -28,35 +29,48 @@ import {
 import { Button, Chip, Row } from '@/ui/components';
 import { DEFAULT_FT, EventLogSheet } from '@/ui/EventLogSheet';
 import { Text } from '@/ui/Text';
-import { colors, radius, sideColor } from '@/ui/theme';
+import { colors, radius, sideBg, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 
 const BENCH = 'bench';
 type Selection = { side: Side; rosterId: string };
 
 const GRID_COLUMNS = 3;
-const GRID_ROWS = 5;
 
-const ACTIONS: { type: EventType; label: string; tone: 'made' | 'miss' | 'stat' }[][] = [
+type ActionCell =
+  | { kind: 'event'; type: EventType; label: string; tone: 'made' | 'miss' | 'stat' }
+  | { kind: 'foul' }
+  | { kind: 'timeout'; side: Side };
+
+const event = (type: EventType, label: string, tone: 'made' | 'miss' | 'stat'): ActionCell => ({
+  kind: 'event',
+  type,
+  label,
+  tone,
+});
+
+// 上段＝成功、中段＝失敗、下段＝ファウルとチームの記録
+const ACTIONS: ActionCell[][] = [
   [
-    { type: 'FG2_MADE', label: '2P ○', tone: 'made' },
-    { type: 'FG3_MADE', label: '3P ○', tone: 'made' },
-    { type: 'FT_MADE', label: 'FT ○', tone: 'made' },
+    event('FG2_MADE', '2P ○', 'made'),
+    event('FG3_MADE', '3P ○', 'made'),
+    event('FT_MADE', 'FT ○', 'made'),
+    event('OREB', 'OR', 'stat'),
+    event('AST', 'AST', 'stat'),
   ],
   [
-    { type: 'FG2_MISS', label: '2P ×', tone: 'miss' },
-    { type: 'FG3_MISS', label: '3P ×', tone: 'miss' },
-    { type: 'FT_MISS', label: 'FT ×', tone: 'miss' },
+    event('FG2_MISS', '2P ×', 'miss'),
+    event('FG3_MISS', '3P ×', 'miss'),
+    event('FT_MISS', 'FT ×', 'miss'),
+    event('DREB', 'DR', 'stat'),
+    event('STL', 'STL', 'stat'),
   ],
   [
-    { type: 'OREB', label: 'OR', tone: 'stat' },
-    { type: 'DREB', label: 'DR', tone: 'stat' },
-    { type: 'AST', label: 'AST', tone: 'stat' },
-  ],
-  [
-    { type: 'STL', label: 'STL', tone: 'stat' },
-    { type: 'BLK', label: 'BLK', tone: 'stat' },
-    { type: 'TOV', label: 'TOV', tone: 'stat' },
+    { kind: 'foul' },
+    event('TOV', 'TOV', 'stat'),
+    event('BLK', 'BLK', 'stat'),
+    { kind: 'timeout', side: 'A' },
+    { kind: 'timeout', side: 'B' },
   ],
 ];
 
@@ -67,6 +81,7 @@ export default function LiveScreen() {
   const router = useRouter();
   const { bundle, reload } = useGame(gameId);
   useKeepAwake();
+  const insets = useSafeAreaInsets();
 
   const [selected, setSelected] = useState<Selection | null>(null);
   const [foulSheet, setFoulSheet] = useState<{ kind: FoulKind; ft: number } | null>(null);
@@ -280,92 +295,151 @@ export default function LiveScreen() {
 
   const teamPanel = (side: Side) => {
     const team: TeamState = state[side];
-    const name = (side === 'A' ? game.teamAName : game.teamBName) || `チーム${side}`;
     const benchActive = selected?.side === side && selected.rosterId === BENCH;
-    const cells = [
-      ...team.players.slice(0, RULES.maxRosterSize).map((p) => playerButton(side, p)),
-      <Pressable
-        key={BENCH}
-        accessibilityRole="button"
-        accessibilityLabel={`${side} ベンチ`}
-        accessibilityState={{ selected: benchActive }}
-        onPress={() => select(side, BENCH)}
-        style={[styles.cell, styles.bench, benchActive && { backgroundColor: sideColor(side), borderColor: sideColor(side) }]}
-      >
-        <Text style={[styles.benchText, benchActive && { color: colors.primaryText }]}>ベンチ</Text>
-        {team.coach.disqualified ? (
-          <Text style={[styles.outText, { color: colors.danger }]}>HC失格</Text>
-        ) : (
-          team.coach.C + team.coach.B > 0 && (
-            <Text style={[styles.foulCount, benchActive && { color: colors.primaryText }]}>
-              F{team.coach.C + team.coach.B}
-            </Text>
-          )
-        )}
-      </Pressable>,
-      ...(team.players.length < RULES.maxRosterSize
-        ? [
-            <Pressable
-              key="add"
-              accessibilityRole="button"
-              accessibilityLabel={`${side} 背番号を追加`}
-              onPress={() => setAdding({ side, number: '' })}
-              style={[styles.cell, styles.addCell]}
-            >
-              <Text style={styles.addText}>＋番号</Text>
-            </Pressable>,
-          ]
-        : []),
-    ];
-    const rows = Array.from({ length: GRID_ROWS }, (_, r) =>
-      cells.slice(r * GRID_COLUMNS, (r + 1) * GRID_COLUMNS),
+    const players = team.players.slice(0, RULES.maxRosterSize).map((p) => playerButton(side, p));
+    const rows = Array.from({ length: Math.ceil(RULES.maxRosterSize / GRID_COLUMNS) }, (_, r) =>
+      players.slice(r * GRID_COLUMNS, (r + 1) * GRID_COLUMNS),
     );
+    const benchFouls = team.coach.C + team.coach.B;
     return (
       <View style={styles.team}>
-        <View style={styles.teamHeader}>
-          <Text style={[styles.teamName, { color: sideColor(side) }]} numberOfLines={1}>
-            {side} {name}
+        <View style={styles.teamInfo}>
+          <Text style={styles.infoLabel}>TF</Text>
+          <View style={styles.dots} accessible accessibilityLabel={`チームファウル ${team.teamFouls}`}>
+            {[0, 1, 2, 3].map((i) => (
+              <View
+                key={i}
+                style={[
+                  styles.foulDot,
+                  i < team.teamFouls && { backgroundColor: team.inBonus ? colors.danger : sideColor(side) },
+                ]}
+              />
+            ))}
+          </View>
+          <Text num style={[styles.infoCount, team.inBonus && { color: colors.danger }]}>
+            {team.teamFouls}
           </Text>
-          <Row style={styles.teamBadges}>
-            <Text style={[styles.badge, team.inBonus && styles.badgeDanger]}>
-              TF {team.teamFouls}
-              {team.inBonus ? '　次からFT' : ''}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${side} 交代`}
-              onPress={() =>
-                setSubSheet({
-                  side,
-                  court: team.players.filter((p) => p.onCourt).map((p) => p.roster.id),
-                  clock: '',
-                })
-              }
-              hitSlop={6}
-              style={styles.toButton}
-            >
-              <Text style={styles.toText}>交代</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${side} タイムアウト 残り${team.timeoutsRemaining}回`}
-              disabled={team.timeoutsRemaining === 0}
-              onPress={() => timeout(side)}
-              hitSlop={8}
-              style={[styles.toButton, team.timeoutsRemaining === 0 && styles.toButtonDisabled]}
-            >
-              <Text style={[styles.toText, team.timeoutsRemaining === 0 && { color: colors.sub }]}>
-                TO 残{team.timeoutsRemaining}
-              </Text>
-            </Pressable>
-          </Row>
+          {team.inBonus && <Text style={styles.bonus}>次からFT</Text>}
+          <View style={styles.flex} />
+          <Text style={styles.infoLabel}>TO 残り{team.timeoutsRemaining}</Text>
         </View>
         {rows.map((row, r) => (
           <View key={r} style={styles.gridRow}>
             {Array.from({ length: GRID_COLUMNS }, (_, c) => row[c] ?? <View key={`e${c}`} style={styles.cellEmpty} />)}
           </View>
         ))}
+        <View style={styles.teamButtons}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${side} ベンチ`}
+            accessibilityState={{ selected: benchActive }}
+            onPress={() => select(side, BENCH)}
+            style={[styles.teamButton, benchActive && { backgroundColor: sideColor(side) }]}
+          >
+            <Text
+              style={[
+                styles.teamButtonText,
+                team.coach.disqualified && { color: colors.danger },
+                benchActive && { color: colors.primaryText },
+              ]}
+            >
+              {team.coach.disqualified ? 'HC失格' : benchFouls > 0 ? `ベンチ F${benchFouls}` : 'ベンチ'}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${side} 交代`}
+            onPress={() =>
+              setSubSheet({
+                side,
+                court: team.players.filter((p) => p.onCourt).map((p) => p.roster.id),
+                clock: '',
+              })
+            }
+            style={[styles.teamButton, { backgroundColor: sideBg(side) }]}
+          >
+            <Text style={styles.teamButtonText}>交代</Text>
+          </Pressable>
+          {team.players.length < RULES.maxRosterSize && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${side} 背番号を追加`}
+              onPress={() => setAdding({ side, number: '' })}
+              style={styles.teamButton}
+            >
+              <Text style={styles.teamButtonText}>＋番号</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
+    );
+  };
+
+  const teamName = (side: Side) => (side === 'A' ? game.teamAName : game.teamBName) || `チーム${side}`;
+
+  const actionButton = (cell: ActionCell) => {
+    if (cell.kind === 'foul') {
+      return (
+        <Pressable
+          key="foul"
+          accessibilityRole="button"
+          accessibilityLabel="ファウル"
+          accessibilityHint="長押しで種類とFT数を選択"
+          disabled={!selected}
+          onPress={onFoulPress}
+          onLongPress={openFoulSheet}
+          delayLongPress={350}
+          style={({ pressed }) => [styles.cell, styles.foul, !selected && styles.actionDisabled, pressed && styles.pressed]}
+        >
+          <Text style={styles.foulText}>FOUL</Text>
+          <Text style={styles.foulHint} numberOfLines={1}>
+            {isBench ? '種類を選ぶ' : '長押しで種類'}
+          </Text>
+        </Pressable>
+      );
+    }
+    if (cell.kind === 'timeout') {
+      const left = state[cell.side].timeoutsRemaining;
+      return (
+        <Pressable
+          key={`to${cell.side}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${cell.side} タイムアウト 残り${left}回`}
+          disabled={left === 0}
+          onPress={() => timeout(cell.side)}
+          style={({ pressed }) => [
+            styles.cell,
+            { backgroundColor: sideBg(cell.side), borderColor: sideBg(cell.side) },
+            left === 0 && styles.actionDisabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.actionText}>TO</Text>
+          <Text style={[styles.toSide, { color: sideColor(cell.side) }]} numberOfLines={1}>
+            {cell.side} 残り{left}
+          </Text>
+        </Pressable>
+      );
+    }
+    const disabled = !selected || isBench;
+    return (
+      <Pressable
+        key={cell.type}
+        accessibilityRole="button"
+        accessibilityLabel={cell.label}
+        disabled={disabled}
+        onPress={() => record(cell.type)}
+        style={({ pressed }) => [
+          styles.cell,
+          styles.action,
+          cell.tone === 'made' && styles.actionMade,
+          cell.tone === 'miss' && styles.actionMiss,
+          disabled && styles.actionDisabled,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Text style={[styles.actionText, cell.tone === 'made' && { color: colors.primaryText }]}>{cell.label}</Text>
+      </Pressable>
     );
   };
 
@@ -383,118 +457,94 @@ export default function LiveScreen() {
         isBench ? 'ベンチ' : `#${bundle.roster.find((r) => r.id === selected.rosterId)?.number ?? '?'}`
       }`
     : '選手を選択';
+  const pad = { paddingLeft: insets.left + 10, paddingRight: insets.right + 10 };
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.main}>
+    <View style={styles.screen}>
+      <View style={[styles.top, pad, { paddingTop: insets.top }]}>
+        <View style={[styles.sideBar, { backgroundColor: colors.teamAOnInk }]} />
+        <Text style={styles.topName} numberOfLines={1}>
+          {teamName('A')}
+        </Text>
+        <Text num style={styles.topScore}>
+          {state.A.score}
+        </Text>
+        <Text style={styles.topPeriod}>{periodLabel(period)}</Text>
+        <Text num style={styles.topScore}>
+          {state.B.score}
+        </Text>
+        <Text style={[styles.topName, styles.textRight]} numberOfLines={1}>
+          {teamName('B')}
+        </Text>
+        <View style={[styles.sideBar, { backgroundColor: colors.teamBOnInk }]} />
+        <Pressable accessibilityRole="button" accessibilityLabel="メニュー" onPress={menu} hitSlop={8} style={styles.menu}>
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.primaryText} />
+        </Pressable>
+      </View>
+
+      <View style={[styles.main, pad, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         {teamPanel('A')}
 
         <View style={styles.center}>
-          <View style={styles.centerHeader}>
-            <Row style={styles.scoreRow}>
-              <Text num style={[styles.score, { color: sideColor('A') }]}>
-                {state.A.score}
-              </Text>
-              <Text num style={styles.scoreSep}>
-                -
-              </Text>
-              <Text num style={[styles.score, { color: sideColor('B') }]}>
-                {state.B.score}
-              </Text>
-            </Row>
-            <Row style={styles.controls}>
-              <Text style={styles.period}>{periodLabel(period)}</Text>
-              {period === RULES.regulationPeriods && (
-                <Pressable
-                  accessibilityRole="switch"
-                  accessibilityLabel="残り2分"
-                  accessibilityState={{ checked: state.lastTwoMinutes }}
-                  onPress={() => {
-                    setLastTwoMinutes(db, gameId, !state.lastTwoMinutes);
-                    reload();
-                  }}
-                  style={[styles.control, state.lastTwoMinutes && styles.controlOn]}
-                >
-                  <Text style={[styles.controlText, state.lastTwoMinutes && { color: colors.primaryText }]}>
-                    残り2分
-                  </Text>
-                </Pressable>
-              )}
-              <Pressable accessibilityRole="button" onPress={finishPeriod} style={styles.control}>
-                <Text style={styles.controlText}>Q終了</Text>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="メニュー" onPress={menu} style={styles.control}>
-                <Text style={styles.controlText}>≡</Text>
-              </Pressable>
-            </Row>
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="記録ログを開く"
+            onPress={() => setLogOpen(true)}
+            style={[styles.strip, selected && { backgroundColor: sideBg(selected.side) }]}
+          >
+            <Text style={[styles.stripMain, !selected && { color: colors.sub }]} numberOfLines={1}>
+              {selected ? `${selectedLabel} の記録をえらぶ` : '選手をタップ'}
+            </Text>
+            <Text style={styles.stripRecent} numberOfLines={1}>
+              {recent.length ? `直前：${recent[0]}` : '記録なし'}
+            </Text>
+          </Pressable>
 
           {ACTIONS.map((row, r) => (
             <View key={r} style={styles.gridRow}>
-              {row.map((a) => {
-                const disabled = !selected || isBench;
-                return (
-                  <Pressable
-                    key={a.type}
-                    accessibilityRole="button"
-                    accessibilityLabel={a.label}
-                    disabled={disabled}
-                    onPress={() => record(a.type)}
-                    style={({ pressed }) => [
-                      styles.cell,
-                      styles.action,
-                      a.tone === 'made' && styles.actionMade,
-                      a.tone === 'miss' && styles.actionMiss,
-                      disabled && styles.actionDisabled,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={[styles.actionText, a.tone === 'made' && { color: colors.primaryText }]}>{a.label}</Text>
-                  </Pressable>
-                );
-              })}
+              {row.map(actionButton)}
             </View>
           ))}
-          <View style={styles.gridRow}>
+
+          <View style={styles.utilRow}>
+            <Pressable accessibilityRole="button" accessibilityLabel="UNDO" onPress={undo} style={[styles.util, styles.undo]}>
+              <Ionicons name="arrow-undo" size={16} color={colors.warn} />
+              <Text style={[styles.utilText, { color: colors.warn }]}>取り消す</Text>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="ファウル"
-              accessibilityHint="長押しで種類とFT数を選択"
-              disabled={!selected}
-              onPress={onFoulPress}
-              onLongPress={openFoulSheet}
-              delayLongPress={350}
-              style={({ pressed }) => [
-                styles.cell,
-                styles.foul,
-                !selected && styles.actionDisabled,
-                pressed && styles.pressed,
-              ]}
+              accessibilityLabel="ログ"
+              onPress={() => setLogOpen(true)}
+              style={styles.util}
             >
-              <Text style={styles.foulText}>FOUL</Text>
-              <Text style={styles.foulHint}>{isBench ? 'タップで種類を選択' : 'タップ=P　長押し=種類・FT'}</Text>
+              <Text style={styles.utilText}>ログ</Text>
+            </Pressable>
+            {period === RULES.regulationPeriods && (
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityLabel="残り2分"
+                accessibilityState={{ checked: state.lastTwoMinutes }}
+                onPress={() => {
+                  setLastTwoMinutes(db, gameId, !state.lastTwoMinutes);
+                  reload();
+                }}
+                style={[styles.util, state.lastTwoMinutes && { backgroundColor: colors.primary }]}
+              >
+                <Text style={[styles.utilText, state.lastTwoMinutes && { color: colors.primaryText }]}>残り2分</Text>
+              </Pressable>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Q終了"
+              onPress={finishPeriod}
+              style={[styles.util, { backgroundColor: colors.accent }]}
+            >
+              <Text style={styles.utilText}>{periodLabel(period)} 終了</Text>
             </Pressable>
           </View>
         </View>
 
         {teamPanel('B')}
-      </View>
-
-      <View style={styles.logBar}>
-        <Pressable accessibilityRole="button" accessibilityLabel="UNDO" onPress={undo} style={styles.undo}>
-          <Text style={styles.undoText}>↶ UNDO</Text>
-        </Pressable>
-        <Text style={[styles.selected, selected && { color: sideColor(selected.side) }]}>{selectedLabel}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="記録ログを開く"
-          onPress={() => setLogOpen(true)}
-          style={styles.recent}
-        >
-          <Text style={styles.recentText} numberOfLines={1}>
-            {recent.length ? `直近: ${recent.join(' / ')}` : '記録なし（タップでログ）'}
-          </Text>
-        </Pressable>
       </View>
 
       <Modal
@@ -687,7 +737,7 @@ export default function LiveScreen() {
       </Modal>
 
       <EventLogSheet visible={logOpen} bundle={bundle} onClose={() => setLogOpen(false)} onChanged={reload} />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -696,31 +746,64 @@ const GAP = 5;
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
-  main: { flex: 1, flexDirection: 'row', gap: 10, paddingHorizontal: 4, paddingTop: 2 },
-  team: { flex: 1, gap: GAP },
-  center: { flex: 1.15, gap: GAP },
-  teamHeader: { height: 60, justifyContent: 'space-between' },
-  teamName: { fontSize: 15, fontWeight: '800' },
-  teamBadges: { justifyContent: 'space-between' },
-  badge: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text,
-    backgroundColor: colors.disabledBg,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 9,
+  top: {
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingBottom: 2,
+  },
+  sideBar: { width: 8, height: 26, borderRadius: 4 },
+  topName: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '800', color: colors.primaryText },
+  textRight: { textAlign: 'right' },
+  topScore: { fontSize: 38, lineHeight: 44, minWidth: 44, textAlign: 'center', color: colors.primaryText },
+  topPeriod: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.accentText,
+    backgroundColor: colors.accent,
+    paddingHorizontal: 12,
+    paddingVertical: 2,
+    borderRadius: 10,
     overflow: 'hidden',
   },
-  badgeDanger: { color: colors.primaryText, backgroundColor: colors.danger },
-  toButton: {
-    paddingHorizontal: 11,
-    paddingVertical: 4,
-    borderRadius: 9,
-    backgroundColor: colors.accentBg,
+  menu: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.inkSoft, alignItems: 'center', justifyContent: 'center' },
+  main: { flex: 1, flexDirection: 'row', gap: 10, paddingTop: 6 },
+  team: { flex: 1, gap: GAP },
+  center: { flex: 1.5, gap: GAP },
+  teamInfo: { height: 20, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  infoLabel: { fontSize: 12, fontWeight: '800', color: colors.text },
+  infoCount: { fontSize: 16, lineHeight: 18, color: colors.text },
+  dots: { flexDirection: 'row', gap: 3 },
+  foulDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.disabled },
+  bonus: { fontSize: 11, fontWeight: '800', color: colors.danger },
+  teamButtons: { height: 38, flexDirection: 'row', gap: GAP },
+  teamButton: { flex: 1, borderRadius: 12, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
+  teamButtonText: { fontSize: 13, fontWeight: '800', color: colors.text },
+  strip: {
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 8,
   },
-  toButtonDisabled: { backgroundColor: colors.disabledBg },
-  toText: { fontSize: 13, fontWeight: '800', color: colors.text },
+  stripMain: { fontSize: 14, fontWeight: '800', color: colors.text },
+  stripRecent: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 12, fontWeight: '700', color: colors.mute },
+  utilRow: { height: 40, flexDirection: 'row', gap: GAP },
+  util: {
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  utilText: { fontSize: 13, fontWeight: '800', color: colors.text },
+  undo: { backgroundColor: colors.warnBg },
+  toSide: { fontSize: 10, fontWeight: '800' },
   gridRow: { flex: 1, flexDirection: 'row', gap: GAP },
   cell: {
     flex: 1,
@@ -736,34 +819,6 @@ const styles = StyleSheet.create({
   number: { fontSize: 28, lineHeight: 30, color: colors.text },
   foulCount: { position: 'absolute', top: 2, right: 6, fontSize: 11, fontWeight: '700', color: colors.sub },
   outText: { position: 'absolute', bottom: 1, fontSize: 10, fontWeight: '700', color: colors.sub },
-  bench: { backgroundColor: colors.card, borderColor: colors.card },
-  benchText: { fontSize: 14, fontWeight: '700', color: colors.text },
-  centerHeader: { height: 60, justifyContent: 'space-between' },
-  scoreRow: { justifyContent: 'center', gap: 12 },
-  score: { fontSize: 34, lineHeight: 34 },
-  scoreSep: { fontSize: 24, lineHeight: 34, color: colors.sub },
-  controls: { justifyContent: 'center', alignItems: 'center', gap: 6 },
-  period: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.accentText,
-    backgroundColor: colors.accent,
-    paddingHorizontal: 10,
-    lineHeight: 20,
-    height: 22,
-    borderRadius: 9,
-    overflow: 'hidden',
-    marginRight: 2,
-  },
-  control: {
-    paddingHorizontal: 10,
-    height: 22,
-    borderRadius: 9,
-    backgroundColor: colors.card,
-    justifyContent: 'center',
-  },
-  controlOn: { backgroundColor: colors.primary },
-  controlText: { fontSize: 12, fontWeight: '700', color: colors.text },
   action: { backgroundColor: colors.card, borderColor: colors.card },
   actionMade: { backgroundColor: colors.primary, borderColor: colors.primary },
   actionMiss: { borderColor: colors.primary },
@@ -772,26 +827,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.5 },
   foul: { backgroundColor: colors.dangerBg, borderColor: colors.dangerBg },
   foulText: { fontSize: 18, fontWeight: '800', color: colors.dangerInk },
-  foulHint: { fontSize: 10, color: colors.dangerInk },
-  logBar: { height: 42, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingVertical: 3 },
-  undo: {
-    height: '100%',
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: colors.warnBg,
-    justifyContent: 'center',
-  },
-  undoText: { fontSize: 14, fontWeight: '800', color: colors.warn },
-  selected: { width: 92, fontSize: 14, fontWeight: '800', color: colors.sub, textAlign: 'center' },
-  recent: {
-    flex: 1,
-    height: '100%',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: colors.card,
-  },
-  recentText: { fontSize: 13, color: colors.text },
+  foulHint: { fontSize: 9, color: colors.dangerInk },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(22,32,58,0.5)',
@@ -818,8 +854,6 @@ const styles = StyleSheet.create({
   subKeyText: { fontSize: 22, color: colors.text },
   subHint: { fontSize: 11, color: colors.sub },
   subError: { fontSize: 13, fontWeight: '700', color: colors.danger },
-  addCell: { backgroundColor: 'transparent', borderColor: colors.disabled, borderStyle: 'dashed' },
-  addText: { fontSize: 13, fontWeight: '700', color: colors.sub },
   padSheet: { width: 440, maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 16, gap: 10 },
   padDisplay: { minWidth: 64, textAlign: 'center', fontSize: 34, color: colors.text },
   padGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

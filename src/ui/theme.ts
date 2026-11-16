@@ -38,6 +38,9 @@ export const colors = {
   teamABg: '#e6e9ff',
   teamB: '#0b7f75',
   teamBBg: '#ddf3f0',
+  /** 濃紺の面の上で使うチーム色 */
+  teamAOnInk: '#7c8bff',
+  teamBOnInk: '#4fd1c1',
 } as const;
 
 export const sideColor = (side: 'A' | 'B') => (side === 'A' ? colors.teamA : colors.teamB);
