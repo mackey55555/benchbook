@@ -210,3 +210,34 @@ describe('statValue / formatStat', () => {
     expect(formatStat(ftp, null, 'total')).toBe('-');
   });
 });
+
+describe('共有用シート（HTML）', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- 出力側の確認をここでまとめて行う
+  const html = require('../../output/analysisHtml') as typeof import('../../output/analysisHtml');
+  const a = analyzeTeam([
+    {
+      game: { id: 'g', date: '2026-10-01', ownSide: 'A', teamAName: '<A組>', teamBName: 'B&組' },
+      roster: [...roster('A', ['4', '5']), ...roster('B', ['9'])],
+      events: [ev('FG3_MADE', 'A', 'A4'), ev('FG2_MADE', 'A', 'A5'), ev('FG2_MADE', 'B', 'B9')],
+    },
+  ]);
+
+  it('チーム名・相手名をエスケープして載せる', () => {
+    const out = html.buildTeamReportHtml(a, { rangeLabel: '今年度', mode: 'avg' });
+    expect(out).toContain('&lt;A組&gt; チーム成績');
+    expect(out).toContain('B&amp;組');
+    expect(out).toContain('1勝 0敗');
+    expect(out).not.toContain('<A組>');
+  });
+
+  it('選手の比較表は指定した項目の多い順に並ぶ', () => {
+    const out = html.buildPlayersReportHtml(a, { rangeLabel: 'すべて', mode: 'total', sortKey: 'fg2m' });
+    expect(out.indexOf('<td class="b">5</td>')).toBeLessThan(out.indexOf('<td class="b">4</td>'));
+  });
+
+  it('選手個人のシートに合計・平均と試合ごとの成績が入る', () => {
+    const out = html.buildPlayerReportHtml(a.players.find((p) => p.number === '4')!, { rangeLabel: 'すべて', teamName: 'A組' });
+    expect(out).toContain('合計');
+    expect(out).toContain('2026-10-01');
+  });
+});

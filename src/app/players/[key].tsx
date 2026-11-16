@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -13,8 +13,10 @@ import {
   type DateRange,
   type StatMode,
 } from '@/domain/analysis';
+import { buildPlayerReportHtml } from '@/output/analysisHtml';
 import { GroupedBars, Meter } from '@/ui/charts';
 import { Button, Card, Chip, Row, SectionTitle, Segmented } from '@/ui/components';
+import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
 import { colors, radius } from '@/ui/theme';
@@ -57,6 +59,15 @@ export default function PlayerScreen() {
   const everything = useAnalysis('all');
   const player = analysis.players.find((p) => p.key === params.key);
   const identity = player ?? everything.players.find((p) => p.key === params.key);
+
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareHtml = useMemo(
+    () =>
+      shareOpen && player
+        ? buildPlayerReportHtml(player, { rangeLabel: DATE_RANGE_LABELS[range], teamName: analysis.teamName })
+        : '',
+    [shareOpen, player, range, analysis.teamName],
+  );
 
   const metric = statColumn(metricKey);
   const trend = (player?.log ?? []).slice(-TREND_GAMES);
@@ -124,6 +135,7 @@ export default function PlayerScreen() {
               <Row>
                 <SectionTitle>成績</SectionTitle>
                 <View style={styles.flex} />
+                <Button title="共有" small variant="secondary" onPress={() => setShareOpen(true)} />
                 <Segmented options={MODES} value={mode} onChange={setMode} style={styles.modes} />
               </Row>
               <View style={styles.grid}>
@@ -225,6 +237,12 @@ export default function PlayerScreen() {
           )}
         </>
       )}
+      <ShareSheet
+        visible={shareOpen}
+        html={shareHtml}
+        name={`${identity?.number ?? ''}_${identity?.name || '選手'}_${DATE_RANGE_LABELS[range]}`}
+        onClose={() => setShareOpen(false)}
+      />
     </ScrollView>
   );
 }
@@ -245,7 +263,7 @@ const styles = StyleSheet.create({
   heroLabel: { fontSize: 11, fontWeight: '700', color: colors.onInkSub },
   heroValue: { fontSize: 34, lineHeight: 38, color: colors.primaryText },
   heroTotal: { fontSize: 11, color: colors.onInkSub },
-  modes: { width: 190 },
+  modes: { width: 170 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   stat: { width: '31.5%', flexGrow: 1, backgroundColor: colors.card, borderRadius: radius.md, padding: 10, gap: 2 },
   statLabel: { fontSize: 11, fontWeight: '700', color: colors.sub },

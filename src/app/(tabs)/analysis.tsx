@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,8 +16,10 @@ import {
   type TeamAnalysis,
 } from '@/domain/analysis';
 import { periodLabel } from '@/domain/rules';
+import { buildPlayersReportHtml, buildTeamReportHtml } from '@/output/analysisHtml';
 import { GroupedBars, Legend, Meter } from '@/ui/charts';
 import { Button, Card, Chip, Row, SectionTitle, Segmented } from '@/ui/components';
+import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
 import { colors, radius } from '@/ui/theme';
@@ -56,14 +58,29 @@ export default function AnalysisScreen() {
   const [axis, setAxis] = useState<Axis>('team');
   const [range, setRange] = useState<DateRange>('all');
   const [mode, setMode] = useState<StatMode>('avg');
+  const [sortKey, setSortKey] = useState('pts');
+  const [shareOpen, setShareOpen] = useState(false);
   const analysis = useAnalysis(range);
+
+  // 共有用のシートは、いま見ている軸・期間・平均／合計・並び順で作る
+  const shareHtml = useMemo(() => {
+    if (!shareOpen) return '';
+    const options = { rangeLabel: DATE_RANGE_LABELS[range], mode };
+    return axis === 'team'
+      ? buildTeamReportHtml(analysis, options)
+      : buildPlayersReportHtml(analysis, { ...options, sortKey });
+  }, [shareOpen, axis, analysis, range, mode, sortKey]);
+  const shareName = `${analysis.teamName || 'benchbook'}_${axis === 'team' ? 'チーム成績' : '選手成績'}_${DATE_RANGE_LABELS[range]}`;
 
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="never"
       contentContainerStyle={[styles.container, { paddingTop: insets.top + 12 }]}
     >
-      <Text style={styles.title}>分析</Text>
+      <Row>
+        <Text style={[styles.title, styles.flex]}>分析</Text>
+        {analysis.games > 0 && <Button title="共有" small variant="secondary" onPress={() => setShareOpen(true)} />}
+      </Row>
       <Segmented
         options={[
           { value: 'team', label: 'チーム' },
@@ -95,10 +112,11 @@ export default function AnalysisScreen() {
           {axis === 'team' ? (
             <TeamView key={range} analysis={analysis} mode={mode} />
           ) : (
-            <PlayersView analysis={analysis} mode={mode} range={range} />
+            <PlayersView analysis={analysis} mode={mode} range={range} sortKey={sortKey} onSort={setSortKey} />
           )}
         </>
       )}
+      <ShareSheet visible={shareOpen} html={shareHtml} name={shareName} onClose={() => setShareOpen(false)} />
     </ScrollView>
   );
 }
@@ -238,9 +256,15 @@ function TeamView({ analysis, mode }: { analysis: TeamAnalysis; mode: StatMode }
   );
 }
 
-function PlayersView({ analysis, mode, range }: { analysis: TeamAnalysis; mode: StatMode; range: DateRange }) {
+function PlayersView(props: {
+  analysis: TeamAnalysis;
+  mode: StatMode;
+  range: DateRange;
+  sortKey: string;
+  onSort: (key: string) => void;
+}) {
+  const { analysis, mode, range, sortKey, onSort } = props;
   const router = useRouter();
-  const [sortKey, setSortKey] = useState('pts');
   const sortCol = statColumn(sortKey);
   // 値の大きい順。成功率が出せない選手（試投なし）は最後に回す
   const value = (p: TeamAnalysis['players'][number]) => statValue(sortCol, p.line, p.games, mode) ?? -1;
@@ -273,7 +297,7 @@ function PlayersView({ analysis, mode, range }: { analysis: TeamAnalysis; mode: 
         headLabel="選手"
         leadLabel="試合"
         sortKey={sortKey}
-        onSort={setSortKey}
+        onSort={onSort}
         onPressRow={(key) => router.push({ pathname: '/players/[key]', params: { key, range } })}
       />
       <Text style={styles.cardNote}>試合数は、出場登録された試合の数です</Text>

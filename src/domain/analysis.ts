@@ -122,6 +122,8 @@ export interface PlayerAnalysis {
 }
 
 export interface TeamAnalysis {
+  /** 自チームの名前（いちばん新しい試合での名前） */
+  teamName: string;
   games: number;
   wins: number;
   losses: number;
@@ -181,6 +183,7 @@ export function perGame(total: number, games: number): number {
 export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
   const sorted = [...games].sort((a, b) => (a.game.date < b.game.date ? -1 : a.game.date > b.game.date ? 1 : 0));
   const result: TeamAnalysis = {
+    teamName: '',
     games: sorted.length,
     wins: 0,
     losses: 0,
@@ -202,6 +205,7 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
     if (outcome === 'win') result.wins++;
     else if (outcome === 'lose') result.losses++;
     else result.draws++;
+    result.teamName = (ownSide === 'A' ? game.teamAName : game.teamBName) || result.teamName;
     const opponent = (oppSide === 'A' ? game.teamAName : game.teamBName) || '相手';
     const box = buildBoxScore(events, roster);
     result.trend.push({
