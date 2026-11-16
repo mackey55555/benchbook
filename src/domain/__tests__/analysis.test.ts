@@ -6,6 +6,9 @@ import {
   gameResult,
   pct,
   rangeStart,
+  statColumn,
+  statValue,
+  formatStat,
   type AnalysisGame,
 } from '../analysis';
 import type { GameStatus, Side } from '../types';
@@ -146,6 +149,14 @@ describe('analyzeTeam', () => {
     expect([p1.number, p1.games, p1.line.pts]).toEqual(['5', 2, 5]);
     // g2 の #4 はマスタに無いので、背番号と氏名で別の選手として数える
     expect(a.players).toHaveLength(3);
+    expect(p1.log.map((l) => [l.gameId, l.opponent, l.result, l.line.pts])).toEqual([
+      ['g1', 'B組', 'win', 2],
+      ['g2', 'B組', 'win', 3],
+    ]);
+    expect(a.trend.map((t) => [t.ownLine.pts, t.oppLine.pts])).toEqual([
+      [2, 0],
+      [3, 0],
+    ]);
   });
 });
 
@@ -170,5 +181,32 @@ describe('countFixStats', () => {
     const counts = countFixStats(events, 1);
     expect(counts.get('A4')).toEqual({ FG2_MADE: 2, FG3_MADE: 0, FT_MADE: 0, FOUL: 1 });
     expect(counts.size).toBe(1);
+  });
+});
+
+describe('statValue / formatStat', () => {
+  const line = analyzeTeam([
+    {
+      game: { id: 'g', date: '2026-10-01', ownSide: 'A', teamAName: '', teamBName: '' },
+      roster: roster('A', ['4']),
+      events: [ev('FG3_MADE', 'A', 'A4'), ev('FG3_MISS', 'A', 'A4'), ev('FG3_MISS', 'A', 'A4'), ev('AST', 'A', 'A4')],
+    },
+  ]).own;
+
+  it('数は合計と1試合平均を出し分け、成功率は平均にしない', () => {
+    const pts = statColumn('pts');
+    expect(statValue(pts, line, 4, 'total')).toBe(3);
+    expect(statValue(pts, line, 4, 'avg')).toBe(0.75);
+    expect(formatStat(pts, 3, 'total')).toBe('3');
+    expect(formatStat(pts, 0.75, 'avg')).toBe('0.8');
+    const fg3p = statColumn('fg3p');
+    expect(statValue(fg3p, line, 4, 'avg')).toBeCloseTo(33.33, 1);
+    expect(formatStat(fg3p, 33.33, 'avg')).toBe('33%');
+  });
+
+  it('試投が無い成功率は null で「-」と表示する', () => {
+    const ftp = statColumn('ftp');
+    expect(statValue(ftp, line, 1, 'total')).toBeNull();
+    expect(formatStat(ftp, null, 'total')).toBe('-');
   });
 });

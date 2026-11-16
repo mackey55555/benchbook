@@ -91,6 +91,7 @@ export default function RootLayout() {
         <Stack.Screen name="teams/index" options={{ title: 'チーム管理' }} />
         <Stack.Screen name="teams/[teamId]" options={{ title: 'チーム' }} />
         <Stack.Screen name="backup" options={{ title: 'バックアップ' }} />
+        <Stack.Screen name="players/[key]" options={{ title: '選手' }} />
         <Stack.Screen name="games/[gameId]/prep" options={{ title: '試合準備' }} />
         <Stack.Screen name="games/[gameId]/index" options={{ title: '試合詳細' }} />
         <Stack.Screen

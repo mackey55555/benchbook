@@ -29,7 +29,8 @@ export interface BarGroup {
   key: string;
   label: string;
   own: number;
-  opp: number;
+  /** 省くと自チームだけの1系列になる */
+  opp?: number;
 }
 
 /**
@@ -46,7 +47,7 @@ export function GroupedBars(props: {
   onSelect?: (key: string) => void;
 }) {
   const { groups, height = 140, showValues, format = String, selectedKey, onSelect } = props;
-  const max = niceMax(Math.max(1, ...groups.flatMap((g) => [g.own, g.opp])));
+  const max = niceMax(Math.max(1, ...groups.flatMap((g) => [g.own, g.opp ?? 0])));
   const ticks = [max, max / 2, 0];
   const bar = (value: number, color: string) => (
     <View style={styles.barSlot}>
@@ -54,6 +55,8 @@ export function GroupedBars(props: {
       <View style={[styles.bar, { height: Math.max(value > 0 ? 2 : 0, (value / max) * height), backgroundColor: color }]} />
     </View>
   );
+  const describe = (g: BarGroup) =>
+    g.opp === undefined ? `${g.label} ${format(g.own)}` : `${g.label} 自チーム${format(g.own)} 相手${format(g.opp)}`;
   return (
     <View style={styles.chart}>
       <View style={[styles.axis, { height: height + 14 }]}>
@@ -74,14 +77,14 @@ export function GroupedBars(props: {
               const content = (
                 <View style={[styles.pair, selectedKey != null && !selected && styles.dim]}>
                   {bar(g.own, colors.chartOwn)}
-                  {bar(g.opp, colors.chartOpp)}
+                  {g.opp !== undefined && bar(g.opp, colors.chartOpp)}
                 </View>
               );
               return onSelect ? (
                 <Pressable
                   key={g.key}
                   accessibilityRole="button"
-                  accessibilityLabel={`${g.label} 自チーム${format(g.own)} 相手${format(g.opp)}`}
+                  accessibilityLabel={describe(g)}
                   accessibilityState={{ selected }}
                   onPress={() => onSelect(g.key)}
                   style={styles.group}
@@ -92,7 +95,7 @@ export function GroupedBars(props: {
                 <View
                   key={g.key}
                   accessible
-                  accessibilityLabel={`${g.label} 自チーム${format(g.own)} 相手${format(g.opp)}`}
+                  accessibilityLabel={describe(g)}
                   style={styles.group}
                 >
                   {content}

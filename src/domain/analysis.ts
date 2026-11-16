@@ -95,6 +95,18 @@ export interface GameTrendPoint {
   own: number;
   opp: number;
   result: GameResult;
+  /** その試合のチーム合計 */
+  ownLine: BoxScoreLine;
+  oppLine: BoxScoreLine;
+}
+
+/** 選手の1試合分の成績 */
+export interface PlayerGameLog {
+  gameId: string;
+  date: string;
+  opponent: string;
+  result: GameResult;
+  line: BoxScoreLine;
 }
 
 export interface PlayerAnalysis {
@@ -103,7 +115,10 @@ export interface PlayerAnalysis {
   name: string;
   /** 出場登録された試合数 */
   games: number;
+  /** 期間の合計 */
   line: BoxScoreLine;
+  /** 古い順 */
+  log: PlayerGameLog[];
 }
 
 export interface TeamAnalysis {
@@ -187,10 +202,14 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
     if (outcome === 'win') result.wins++;
     else if (outcome === 'lose') result.losses++;
     else result.draws++;
+    const opponent = (oppSide === 'A' ? game.teamAName : game.teamBName) || '相手';
+    const box = buildBoxScore(events, roster);
     result.trend.push({
       id: game.id,
       date: game.date,
-      opponent: (oppSide === 'A' ? game.teamAName : game.teamBName) || '相手',
+      opponent,
+      ownLine: box[ownSide].total,
+      oppLine: box[oppSide].total,
       own: score[ownSide],
       opp: score[oppSide],
       result: outcome,
@@ -201,7 +220,6 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
       t.opp += s[oppSide];
     });
 
-    const box = buildBoxScore(events, roster);
     addLine(result.own, box[ownSide].total);
     addLine(result.opp, box[oppSide].total);
     const playerIdOf = new Map(roster.map((r) => [r.id, r.playerId]));
@@ -210,14 +228,15 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
       const key = playerId ?? `${line.number}\n${line.name}`;
       let p = players.get(key);
       if (!p) {
-        p = { key, number: line.number, name: line.name, games: 0, line: zeroLine(line.number, line.name) };
+        p = { key, number: line.number, name: line.name, games: 0, line: zeroLine(line.number, line.name), log: [] };
         players.set(key, p);
       }
       // 背番号・氏名は新しい試合のものを使う
       p.number = line.number;
-      p.name = line.name;
+      if (line.name) p.name = line.name;
       p.games++;
       addLine(p.line, line);
+      p.log.push({ gameId: game.id, date: game.date, opponent, result: outcome, line });
     }
   }
 
@@ -228,6 +247,75 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
   }));
   result.players = [...players.values()];
   return result;
+}
+
+// ---------------------------------------------------------------- 成績の項目
+
+export type StatMode = 'total' | 'avg';
+
+export interface StatColumn {
+  key: string;
+  /** 表の見出し（短い表記） */
+  label: string;
+  /** 日本語の名前 */
+  name: string;
+  /** count は合計と1試合平均を出せる。pct は成功率（0〜100）で、平均にしない */
+  kind: 'count' | 'pct';
+  get: (line: BoxScoreLine) => number | null;
+}
+
+const count = (key: (typeof LINE_KEYS)[number], label: string, name: string): StatColumn => ({
+  key,
+  label,
+  name,
+  kind: 'count',
+  get: (l) => l[key],
+});
+const rate = (
+  key: string,
+  label: string,
+  name: string,
+  made: (typeof LINE_KEYS)[number],
+  att: (typeof LINE_KEYS)[number],
+): StatColumn => ({ key, label, name, kind: 'pct', get: (l) => pct(l[made], l[att]) });
+
+/** 分析で見られる成績の項目（表の列順） */
+export const STAT_COLUMNS: readonly StatColumn[] = [
+  count('pts', 'PTS', '得点'),
+  count('fg2m', '2PM', '2P成功'),
+  count('fg2a', '2PA', '2P試投'),
+  rate('fg2p', '2P%', '2P成功率', 'fg2m', 'fg2a'),
+  count('fg3m', '3PM', '3P成功'),
+  count('fg3a', '3PA', '3P試投'),
+  rate('fg3p', '3P%', '3P成功率', 'fg3m', 'fg3a'),
+  count('ftm', 'FTM', 'FT成功'),
+  count('fta', 'FTA', 'FT試投'),
+  rate('ftp', 'FT%', 'FT成功率', 'ftm', 'fta'),
+  count('oreb', 'OR', 'OFリバウンド'),
+  count('dreb', 'DR', 'DFリバウンド'),
+  count('reb', 'REB', 'リバウンド'),
+  count('ast', 'AST', 'アシスト'),
+  count('stl', 'STL', 'スティール'),
+  count('blk', 'BLK', 'ブロック'),
+  count('tov', 'TO', 'ターンオーバー'),
+  count('pf', 'PF', 'ファウル'),
+];
+
+export function statColumn(key: string): StatColumn {
+  return STAT_COLUMNS.find((c) => c.key === key) ?? STAT_COLUMNS[0];
+}
+
+/** 項目の値。count は mode に応じて合計か1試合平均、pct は成功率（試投なしは null） */
+export function statValue(col: StatColumn, line: BoxScoreLine, games: number, mode: StatMode): number | null {
+  const v = col.get(line);
+  if (v === null || col.kind === 'pct' || mode === 'total') return v;
+  return perGame(v, games);
+}
+
+export function formatStat(col: StatColumn, value: number | null, mode: StatMode): string {
+  if (value === null) return '-';
+  if (col.kind === 'pct') return `${Math.round(value)}%`;
+  return mode === 'total' ? String(value) : value.toFixed(1);
 }
 
 // ---------------------------------------------------------------- 選手別の修正表
