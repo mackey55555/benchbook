@@ -31,7 +31,7 @@ import { useAnalysis } from '@/ui/useAnalysis';
 /** 推移グラフに出す試合数（新しいほうから） */
 const TREND_GAMES = 10;
 /** 推移グラフで選べる項目 */
-const TREND_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg3m', 'fg2p', 'fg3p', 'ftp'];
+const TREND_KEYS = ['pts', 'fg3m', 'fg3p', 'fg2p', 'ftp', 'pf', 'reb', 'tov', 'ast', 'stl', 'blk'];
 
 const RANGES = Object.keys(DATE_RANGE_LABELS) as DateRange[];
 const RESULT_LABELS = { win: '勝ち', lose: '負け', draw: '引分' } as const;

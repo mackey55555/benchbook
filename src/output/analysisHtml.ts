@@ -32,57 +32,66 @@ const CSS = `
 @page { size: A4 portrait; margin: 8mm; }
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 html, body { margin: 0; padding: 0; background: #fff; }
-body { font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; color: #16203a; font-size: 9pt; }
+body { font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; color: #111; font-size: 8pt; }
 .sheet { width: 194mm; margin: 0 auto; }
 .sheet + .sheet { page-break-before: always; }
 tr, .box, .tile { page-break-inside: avoid; }
 @media screen { .sheet { padding: 4mm 0; } }
-.head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 0.8mm solid #16203a; padding-bottom: 2mm; }
-h1 { font-size: 16pt; margin: 0; }
-.sub { font-size: 9pt; color: #5a6478; text-align: right; }
-h2 { font-size: 10.5pt; margin: 5mm 0 1.5mm; padding-left: 2mm; border-left: 1.2mm solid #ff7a2f; line-height: 1.3; }
+.head { border: 0.4mm solid #111; padding: 2mm 3mm; display: flex; justify-content: space-between; align-items: center; }
+.head h1 { font-size: 15pt; margin: 0; letter-spacing: 0.5mm; }
+.head .sub { font-size: 8pt; }
+.head .info { font-size: 8pt; line-height: 1.6; text-align: right; }
+h2 { font-size: 10pt; font-weight: 700; margin: 4mm 0 1mm; }
 .tiles { display: flex; gap: 3mm; margin-top: 4mm; }
-.tile { flex: 1; border: 0.3mm solid #aab2c0; border-radius: 2mm; padding: 2mm 3mm; }
+.tile { flex: 1; border: 0.3mm solid #111; padding: 2mm 3mm; }
 .tile .l { font-size: 8pt; color: #5a6478; }
 .tile .v { font-size: 17pt; font-weight: 700; }
 .tile .s { font-size: 8pt; color: #5a6478; }
+/* 表は、試合ごとのボックススコアのシート（boxScoreHtml.ts）と同じ書式にする */
 table { width: 100%; border-collapse: collapse; }
-th, td { border: 0.2mm solid #aab2c0; padding: 1mm 1.2mm; text-align: right; white-space: nowrap; }
-th { font-size: 7.5pt; color: #16203a; background: #e3e7ee; font-weight: 700; }
-table.wide th, table.wide td { padding: 1mm 0.7mm; font-size: 8pt; }
-table.wide th { font-size: 7pt; }
-tbody tr:nth-child(even) td { background: #f5f7fa; }
+th, td { border: 0.2mm solid #111; height: 5.2mm; padding: 0 1mm; font-size: 7.5pt; text-align: center; white-space: nowrap; }
+th { background: #eee; font-weight: 600; font-size: 6.5pt; height: 3.8mm; }
 td.l, th.l { text-align: left; }
-td.c, th.c { text-align: center; }
-td.b { font-weight: 700; }
-th.sort { background: #16203a; color: #fff; }
-td.sortv { font-weight: 700; background: #ffe8d9 !important; }
-tr.total td { font-weight: 700; background: #e3e7ee !important; border-top: 0.5mm solid #16203a; }
+td.b, td.no, td.pts { font-weight: 700; }
+td.pct { font-size: 6.5pt; }
+th.sort { background: #111; color: #fff; }
+td.sortv { font-weight: 700; background: #ffe8d9; }
+tr.total td { font-weight: 700; background: #f4f4f4; border-top: 0.4mm solid #111; }
 .cols { display: flex; gap: 5mm; }
 .cols > div { flex: 1; min-width: 0; }
-.box { border: 0.3mm solid #aab2c0; border-radius: 2mm; padding: 2mm 3mm; }
+.box { border: 0.2mm solid #111; padding: 2mm 3mm; }
 .box svg { display: block; width: 100%; height: auto; }
 .legend { font-size: 8pt; color: #5a6478; font-weight: 400; }
 .sw { display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: 0.6mm; margin: 0 1mm 0 3mm; vertical-align: -0.3mm; }
 .hero { display: flex; align-items: center; gap: 5mm; margin-top: 4mm; }
 .hero .no { font-size: 34pt; font-weight: 800; line-height: 1; }
 .hero .name { font-size: 15pt; font-weight: 700; }
-.foot { margin-top: 4mm; font-size: 7.5pt; color: #5a6478; }
+.foot { margin-top: 4mm; font-size: 6.5pt; color: #555; line-height: 1.6; border-top: 0.2mm solid #999; padding-top: 1.5mm; }
 `;
 
 /** シート1枚分（見出し・本文・注記）。複数つなげると、PDFではシートごとに改ページする */
 interface Sheet {
+  /** ファイルやページの題名 */
   title: string;
-  /** 見出しの右に出す補足（エスケープ済み） */
-  sub: string;
+  /** 見出しの英字（BOXSCORE と同じ書式） */
+  heading: string;
+  /** 見出しの下の和文（チーム成績など） */
+  label: string;
+  /** 見出しの右に出す情報（行ごと。エスケープ前） */
+  info: string[];
   body: string;
+  /** シート下部の凡例（エスケープ済み） */
+  legend?: string;
 }
 
 function sheetHtml(s: Sheet): string {
   return `<div class="sheet">
-<div class="head"><h1>${esc(s.title)}</h1><div class="sub">${s.sub}</div></div>
+<div class="head">
+<div><h1>${esc(s.heading)}</h1><div class="sub">【${esc(s.label)}】ベンチ控え</div></div>
+<div class="info">${s.info.map(esc).join('<br>')}</div>
+</div>
 ${s.body}
-<div class="foot">Benchbook で記録した控えの記録を集計したものです。公式記録ではありません。成功率は期間全体の成功数÷試投数です</div>
+<div class="foot">${s.legend ? `${s.legend}<br>` : ''}成功率は期間全体の成功数÷試投数です。これは控えの記録を集計したものであり、公式記録ではありません</div>
 </div>`;
 }
 
@@ -237,9 +246,48 @@ function rateText(line: BoxScoreLine, made: 'fg2m' | 'fg3m' | 'ftm', att: 'fg2a'
   return `${p === null ? '-' : `${Math.round(p)}%`}（${line[made]}/${line[att]}本）`;
 }
 
-function cell(c: StatColumn, line: StatLine, games: number, mode: StatMode): string {
-  return formatStat(c, statValue(c, line, games, mode), mode);
+/**
+ * 成績の列の見出し。ボックススコアのシートと同じく、3P・2P・FT・リバウンドは2段にまとめる。
+ * lead は項目の前に置く見出し（「#」「選手」など）で、2段ぶんの高さにする。
+ */
+function statHead(lead: string[], cols: readonly StatColumn[], sortKey?: string): string {
+  let top = '';
+  let bottom = '';
+  for (let i = 0; i < cols.length; ) {
+    const c = cols[i];
+    if (!c.group) {
+      top += `<th rowspan="2" class="${c.key === sortKey ? 'sort' : ''}">${c.label}</th>`;
+      i++;
+      continue;
+    }
+    let n = 0;
+    while (i + n < cols.length && cols[i + n].group === c.group) {
+      const g = cols[i + n];
+      bottom += `<th class="${g.key === sortKey ? 'sort' : ''}">${g.sub ?? g.label}</th>`;
+      n++;
+    }
+    top += `<th colspan="${n}" class="c">${c.group}</th>`;
+    i += n;
+  }
+  return `<thead><tr>${lead.join('')}${top}</tr><tr>${bottom}</tr></thead>`;
 }
+
+/** 表のマスの値。ボックススコアのシートに合わせ、成功率は小数1桁、値が無いときは空欄にする */
+function cell(c: StatColumn, line: StatLine, games: number, mode: StatMode): string {
+  const v = statValue(c, line, games, mode);
+  if (v === null) return '';
+  return c.kind === 'pct' ? `${v.toFixed(1)}%` : formatStat(c, v, mode);
+}
+
+/** 列の種類に応じたマスの書式（得点は太字、成功率は小さめ、並び順の列は色つき） */
+function cellClass(c: StatColumn, sortKey?: string): string {
+  return [c.key === 'pts' ? 'pts' : '', c.kind === 'pct' ? 'pct' : '', c.key === sortKey ? 'sortv' : ''].filter(Boolean).join(' ');
+}
+
+const STAT_LEGEND =
+  'PTS：得点　3P／2P FG：3点／2点シュート　FT：フリースロー　M：成功　A：試投　%：成功率　F：ファウル　OR／DR／TR：オフェンス／ディフェンス／トータルリバウンド　TO：ターンオーバー　AS：アシスト　ST：スティール　BS：ブロック';
+const LINEUP_LEGEND =
+  '試合：出場登録された試合の数　MIN：出場時間　+/-：出場中の得失点差（MIN と +/- は、先発と交代を記録した試合の分だけを集計）';
 
 export interface ReportOptions {
   /** 期間の表示名（「今年度」など） */
@@ -259,12 +307,6 @@ function teamSheet(a: TeamAnalysis, o: ReportOptions): Sheet {
   const avgAgainst = perGame(a.opp.pts, n);
   const diff = avgFor - avgAgainst;
   const trend = a.trend.slice(-20);
-  const half = Math.ceil(TEAM_STAT_COLUMNS.length / 2);
-  const statTable = (cols: readonly StatColumn[]) =>
-    `<table><thead><tr><th class="l">項目</th><th>自チーム</th><th>相手</th></tr></thead><tbody>${cols
-      .map((c) => `<tr><td class="l">${esc(c.name)}</td><td class="b">${cell(c, a.own, n, o.mode)}</td><td>${cell(c, a.opp, n, o.mode)}</td></tr>`)
-      .join('')}</tbody></table>`;
-  const keys = ['reb', 'ast', 'stl', 'blk', 'tov', 'pf'];
   const body = `
 <div class="tiles">
 <div class="tile"><div class="l">戦績</div><div class="v">${a.wins}勝 ${a.losses}敗${a.draws > 0 ? ` ${a.draws}分` : ''}</div><div class="s">${n}試合</div></div>
@@ -292,19 +334,29 @@ function teamSheet(a: TeamAnalysis, o: ReportOptions): Sheet {
     350,
   )}</div>
 </div></div>
-<h2>全項目（${MODE_LABEL[o.mode]}）</h2>
-<div class="cols"><div>${statTable(TEAM_STAT_COLUMNS.slice(0, half))}</div><div>${statTable(TEAM_STAT_COLUMNS.slice(half))}</div></div>
-<h2>試合一覧（新しい順）</h2>
-<table><thead><tr><th class="l">日付</th><th class="l">相手</th><th class="c">結果</th><th>得点</th><th>失点</th>${keys.map((k) => `<th>${statColumn(k).label}</th>`).join('')}</tr></thead><tbody>
+<h2>チーム成績（${MODE_LABEL[o.mode]}）</h2>
+<table>${statHead(['<th rowspan="2"></th>'], TEAM_STAT_COLUMNS)}<tbody>
+<tr><td class="b">自チーム</td>${TEAM_STAT_COLUMNS.map((c) => `<td class="${cellClass(c)}">${cell(c, a.own, n, o.mode)}</td>`).join('')}</tr>
+<tr><td class="b">相手</td>${TEAM_STAT_COLUMNS.map((c) => `<td class="${cellClass(c)}">${cell(c, a.opp, n, o.mode)}</td>`).join('')}</tr>
+</tbody></table>
+<h2>試合ごとの成績（新しい順）</h2>
+<table>${statHead(['<th rowspan="2">日付</th>', '<th rowspan="2">相手</th>', '<th rowspan="2">結果</th>', '<th rowspan="2">失点</th>'], TEAM_STAT_COLUMNS)}<tbody>
 ${[...a.trend]
   .reverse()
   .map(
     (t) =>
-      `<tr><td class="l">${esc(t.date)}</td><td class="l">${esc(t.opponent)}</td><td class="c">${RESULT[t.result]}</td><td class="b">${t.own}</td><td>${t.opp}</td>${keys.map((k) => `<td>${statColumn(k).get(t.ownLine)}</td>`).join('')}</tr>`,
+      `<tr><td class="l">${esc(t.date)}</td><td class="l">${esc(t.opponent)}</td><td>${RESULT[t.result]}</td><td>${t.opp}</td>${TEAM_STAT_COLUMNS.map((c) => `<td class="${cellClass(c)}">${cell(c, t.ownLine, 1, 'total')}</td>`).join('')}</tr>`,
   )
   .join('')}
 </tbody></table>`;
-  return { title: `${a.teamName || '自チーム'} チーム成績`, sub: `${esc(o.rangeLabel)}・${n}試合`, body };
+  return {
+    title: `${a.teamName || '自チーム'} チーム成績`,
+    heading: 'TEAM STATS',
+    label: 'チーム成績',
+    info: [a.teamName || '自チーム', `期間：${o.rangeLabel}　試合数：${n}`],
+    body,
+    legend: STAT_LEGEND,
+  };
 }
 
 /** 選手の比較表。sortKey の多い順に並べる */
@@ -334,19 +386,23 @@ function playersSheet(a: TeamAnalysis, o: ReportOptions & { sortKey: string }): 
       : '<div class="legend">記録がありません</div>'
   }</div>
 <h2>選手別（${MODE_LABEL[o.mode]}・${esc(sortCol.name)}の多い順）</h2>
-<table class="wide"><thead><tr><th class="c">#</th><th class="l">選手</th><th>試合</th>${STAT_COLUMNS.map((c) => `<th class="${c.key === sortCol.key ? 'sort' : ''}">${c.label}</th>`).join('')}</tr></thead><tbody>
+<table class="wide">${statHead(['<th rowspan="2" class="c">No.</th>', '<th rowspan="2">Player</th>', '<th rowspan="2">試合</th>'], STAT_COLUMNS, sortCol.key)}<tbody>
 ${players
   .map(
     (p) =>
-      `<tr><td class="b">${esc(p.number)}</td><td class="l">${esc(p.name)}</td><td>${p.games}</td>${STAT_COLUMNS.map((c) => `<td class="${c.key === sortCol.key ? 'sortv' : ''}">${cell(c, p.line, p.games, o.mode)}</td>`).join('')}</tr>`,
+      `<tr><td class="no">${esc(p.number)}</td><td class="l">${esc(p.name)}</td><td>${p.games}</td>${STAT_COLUMNS.map((c) => `<td class="${cellClass(c, sortCol.key)}">${cell(c, p.line, p.games, o.mode)}</td>`).join('')}</tr>`,
   )
   .join('')}
-<tr class="total"><td></td><td class="l">チーム</td><td>${a.games}</td>${STAT_COLUMNS.map((c) => `<td>${cell(c, a.own, a.games, o.mode)}</td>`).join('')}</tr>
-</tbody></table>
-<div class="foot">試合数は出場登録された試合の数です。MIN（出場時間）と +/-（出場中の得失点差）は、先発と交代を記録した試合の分だけを集計しています。${STAT_COLUMNS.filter((c) => c.kind === 'count')
-    .map((c) => `${c.label}：${c.name}`)
-    .join('　')}</div>`;
-  return { title: `${a.teamName || '自チーム'} 選手成績`, sub: `${esc(o.rangeLabel)}・${a.games}試合`, body };
+<tr class="total"><td colspan="2">合計</td><td>${a.games}</td>${STAT_COLUMNS.map((c) => `<td class="${c.kind === 'pct' ? 'pct' : ''}">${cell(c, a.own, a.games, o.mode)}</td>`).join('')}</tr>
+</tbody></table>`;
+  return {
+    title: `${a.teamName || '自チーム'} 選手成績`,
+    heading: 'PLAYER STATS',
+    label: '選手成績',
+    info: [a.teamName || '自チーム', `期間：${o.rangeLabel}　試合数：${a.games}`],
+    body,
+    legend: `${STAT_LEGEND}<br>${LINEUP_LEGEND}`,
+  };
 }
 
 /** 選手1人のまとめ。合計と平均、得点の推移、試合ごとの成績 */
@@ -359,7 +415,7 @@ function playerSheet(p: PlayerAnalysis, o: { rangeLabel: string; teamName: strin
   const counts = STAT_COLUMNS.filter((c) => c.kind !== 'pct');
   const trend = p.log.slice(-20);
   const row = (label: string, mode: StatMode) =>
-    `<tr><td class="l b">${label}</td>${STAT_COLUMNS.map((c) => `<td>${cell(c, p.line, p.games, mode)}</td>`).join('')}</tr>`;
+    `<tr><td class="b">${label}</td>${STAT_COLUMNS.map((c) => `<td class="${cellClass(c)}">${cell(c, p.line, p.games, mode)}</td>`).join('')}</tr>`;
   const body = `
 <div class="hero"><div class="no">${esc(p.number)}</div><div><div class="name">${esc(p.name || '名前なし')}</div><div class="legend">${esc(o.teamName || '自チーム')}・${esc(o.rangeLabel)}・${p.games}試合</div></div></div>
 <div class="tiles">
@@ -381,19 +437,26 @@ ${['pts', 'reb', 'ast']
   )}</div>
 </div></div>
 <h2>成績</h2>
-<table class="wide"><thead><tr><th class="l"></th>${STAT_COLUMNS.map((c) => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>
+<table class="wide">${statHead(['<th rowspan="2" class="l"></th>'], STAT_COLUMNS)}<tbody>
 ${row('合計', 'total')}${row('平均', 'avg')}</tbody></table>
 <h2>試合ごとの成績（新しい順）</h2>
-<table class="wide"><thead><tr><th class="l">日付</th><th class="l">相手</th><th class="c">結果</th>${counts.map((c) => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>
+<table class="wide">${statHead(['<th rowspan="2">日付</th>', '<th rowspan="2">相手</th>', '<th rowspan="2">結果</th>'], counts)}<tbody>
 ${[...p.log]
   .reverse()
   .map(
     (g) =>
-      `<tr><td class="l">${esc(g.date)}</td><td class="l">${esc(g.opponent)}</td><td class="c">${RESULT[g.result]}</td>${counts.map((c) => `<td class="${c.key === 'pts' ? 'b' : ''}">${formatStat(c, c.get(g.line), 'total')}</td>`).join('')}</tr>`,
+      `<tr><td class="l">${esc(g.date)}</td><td class="l">${esc(g.opponent)}</td><td class="c">${RESULT[g.result]}</td>${counts.map((c) => `<td class="${cellClass(c)}">${cell(c, g.line, 1, 'total')}</td>`).join('')}</tr>`,
   )
   .join('')}
 </tbody></table>`;
-  return { title: `#${p.number} ${p.name} 選手成績`.replace(/\s+/g, ' '), sub: esc(o.rangeLabel), body };
+  return {
+    title: `#${p.number} ${p.name} 選手成績`.replace(/\s+/g, ' ').trim(),
+    heading: 'PLAYER STATS',
+    label: '選手成績',
+    info: [o.teamName || '自チーム', `期間：${o.rangeLabel}　試合数：${p.games}`],
+    body,
+    legend: `${STAT_LEGEND}<br>${LINEUP_LEGEND}`,
+  };
 }
 
 /**
