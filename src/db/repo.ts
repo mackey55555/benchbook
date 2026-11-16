@@ -11,6 +11,7 @@ import {
   remainingTimeouts,
   type AfterPeriod,
 } from '@/domain/rules';
+import type { FixStat } from '@/domain/analysis';
 import type { EventType, FoulKind, GameEvent, RosterEntry, Score, Side } from '@/domain/types';
 import { ON_COURT_MAX, onCourtIds, periodSeconds } from '@/domain/lineup';
 import { ulid } from '@/lib/ulid';
@@ -139,7 +140,8 @@ export interface GameSummary {
   score: Score;
 }
 
-function today(): string {
+/** 端末の日付（YYYY-MM-DD） */
+export function todayString(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -150,7 +152,7 @@ export function createGame(db: Db): Game {
   const own = ensureOwnTeam(db);
   const game: Game = {
     id: ulid(),
-    date: today(),
+    date: todayString(),
     leagueName: '',
     venue: '',
     ownSide: 'A',
@@ -634,6 +636,67 @@ export function replaceEvent(
     tx.update(gameEvents).set({ voidedAt: now }).where(eq(gameEvents.id, original.id)).run();
     tx.insert(gameEvents).values(event).run();
     return event;
+  });
+}
+
+/**
+ * 選手別の修正表からの増減（得点の成功数・ファウル数を1件ずつ直す）。
+ * +1 はそのピリオドの最後の記録の直後に入れる（ランニングスコアの並びを崩さないよう、
+ * 同じ order_key を使い作成時刻で後ろに並べる）。ファウルは P・FT0 で記録する。
+ * -1 はその選手・ピリオド・項目の最後の1件をvoidする。
+ */
+export function adjustStat(
+  db: Db,
+  input: { gameId: string; period: number; side: Side; rosterId: string; type: FixStat; delta: 1 | -1 },
+): void {
+  db.transaction((tx) => {
+    const inPeriod = and(
+      eq(gameEvents.gameId, input.gameId),
+      eq(gameEvents.period, input.period),
+      isNull(gameEvents.voidedAt),
+    );
+    if (input.delta === -1) {
+      const target = tx
+        .select()
+        .from(gameEvents)
+        .where(and(inPeriod, eq(gameEvents.rosterId, input.rosterId), eq(gameEvents.type, input.type)))
+        .orderBy(desc(gameEvents.orderKey), desc(gameEvents.createdAt), desc(gameEvents.id))
+        .get();
+      if (!target) throw new RepoError('このQには、減らせる記録がありません');
+      tx.update(gameEvents).set({ voidedAt: Date.now() }).where(eq(gameEvents.id, target.id)).run();
+      return;
+    }
+    const last = tx
+      .select()
+      .from(gameEvents)
+      .where(and(inPeriod, notInArray(gameEvents.type, ['PERIOD_END', 'L2M'])))
+      .orderBy(desc(gameEvents.orderKey), desc(gameEvents.createdAt), desc(gameEvents.id))
+      .get();
+    let orderKey: number;
+    if (last) {
+      orderKey = last.orderKey;
+    } else {
+      // 記録が1件も無いピリオド。Q終了の印があればその直前、無ければ末尾に置く
+      const marker = activeMarkers(tx, input.gameId, 'PERIOD_END', input.period)[0];
+      orderKey = marker ? marker.orderKey - 0.5 : nextOrderKey(tx, input.gameId);
+    }
+    const event: GameEvent = {
+      id: ulid(),
+      gameId: input.gameId,
+      orderKey,
+      period: input.period,
+      side: input.side,
+      rosterId: input.rosterId,
+      type: input.type,
+      foulKind: input.type === 'FOUL' ? 'P' : null,
+      ftAwarded: input.type === 'FOUL' ? 0 : null,
+      clockSeconds: null,
+      // 同じ order_key の記録より必ず後ろに並ぶようにする
+      createdAt: Math.max(Date.now(), (last?.createdAt ?? 0) + 1),
+      voidedAt: null,
+      replacesEventId: null,
+    };
+    tx.insert(gameEvents).values(event).run();
   });
 }
 

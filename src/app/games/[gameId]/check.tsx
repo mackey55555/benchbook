@@ -19,6 +19,7 @@ import type { Side } from '@/domain/types';
 import { Button } from '@/ui/components';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { EventLogSheet } from '@/ui/EventLogSheet';
+import { QuickFixSheet } from '@/ui/QuickFixSheet';
 import { Text } from '@/ui/Text';
 import { colors, fonts, sideColor } from '@/ui/theme';
 import { TopSheet } from '@/ui/TopSheet';
@@ -31,6 +32,7 @@ export default function CheckScreen() {
   const router = useRouter();
   const { bundle, reload } = useGame(gameId);
   const [logOpen, setLogOpen] = useState(false);
+  const [fixOpen, setFixOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const sheetHtml = useMemo(() => (bundle && sheetOpen ? buildRunningScoreHtml(bundle) : ''), [bundle, sheetOpen]);
   useKeepAwake();
@@ -70,7 +72,7 @@ export default function CheckScreen() {
   const fix = () => {
     recordMismatch(db, gameId, period);
     reload();
-    setLogOpen(true);
+    setFixOpen(true);
   };
 
   const back = () =>
@@ -120,6 +122,17 @@ export default function CheckScreen() {
         </View>
         {column('B')}
       </View>
+      <QuickFixSheet
+        visible={fixOpen}
+        bundle={bundle}
+        period={period}
+        onClose={() => setFixOpen(false)}
+        onChanged={reload}
+        onOpenLog={() => {
+          setFixOpen(false);
+          setLogOpen(true);
+        }}
+      />
       <EventLogSheet
         visible={logOpen}
         bundle={bundle}

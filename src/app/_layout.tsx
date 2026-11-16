@@ -87,7 +87,7 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.bg },
         }}
       >
-        <Stack.Screen name="index" options={{ title: 'Benchbook', headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ title: 'ホーム', headerShown: false }} />
         <Stack.Screen name="teams/index" options={{ title: 'チーム管理' }} />
         <Stack.Screen name="teams/[teamId]" options={{ title: 'チーム' }} />
         <Stack.Screen name="backup" options={{ title: 'バックアップ' }} />

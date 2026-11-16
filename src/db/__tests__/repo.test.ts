@@ -9,6 +9,7 @@ import { buildRunningScore } from '@/domain/stats';
 import {
   RepoError,
   addEvent,
+  adjustStat,
   addPlayer,
   addRosterEntry,
   cancelPeriodEnd,
@@ -485,5 +486,69 @@ describe('試合の削除', () => {
     deleteGame(db, game.id);
     expect(getGameBundle(db, game.id)).toBeUndefined();
     expect(listGames(db)).toHaveLength(0);
+  });
+});
+
+describe('選手別の修正表（adjustStat）', () => {
+  it('+1 はそのQの最後に入り、ランニングスコアの並びを崩さない', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE' });
+    endPeriod(db, game.id, 1);
+    confirmPeriod(db, game.id, 1);
+    addEvent(db, { gameId: game.id, period: 2, side: 'A', rosterId: id('A', '5'), type: 'FG3_MADE' });
+
+    adjustStat(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '6'), type: 'FT_MADE', delta: 1 });
+
+    const bundle = getGameBundle(db, game.id)!;
+    const running = buildRunningScore(bundle.events, bundle.roster).A;
+    expect(running.map((r) => [r.number, r.period, r.total])).toEqual([
+      ['4', 1, 2],
+      ['6', 1, 3],
+      ['5', 2, 6],
+    ]);
+    expect(running[1].periodEnd).toBe(true);
+  });
+
+  it('記録の無いQにも足せる（Q終了の印より前に入る）', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    endPeriod(db, game.id, 1);
+    adjustStat(db, { gameId: game.id, period: 1, side: 'B', rosterId: id('B', '10'), type: 'FG2_MADE', delta: 1 });
+    const events = listEvents(db, game.id).filter((e) => e.voidedAt === null);
+    expect(events.map((e) => e.type)).toEqual(['FG2_MADE', 'PERIOD_END']);
+    expect(computeScore(events)).toEqual({ A: 0, B: 2 });
+  });
+
+  it('-1 はその選手・Q・項目の最後の1件だけを取り消す', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    const four = id('A', '4');
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FG2_MADE' });
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FG3_MADE' });
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '5'), type: 'FG2_MADE' });
+    adjustStat(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FG2_MADE', delta: -1 });
+    expect(computeScore(listEvents(db, game.id))).toEqual({ A: 5, B: 0 });
+    expect(() =>
+      adjustStat(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FG2_MADE', delta: -1 }),
+    ).toThrow(RepoError);
+    expect(() =>
+      adjustStat(db, { gameId: game.id, period: 2, side: 'A', rosterId: four, type: 'FG3_MADE', delta: -1 }),
+    ).toThrow(RepoError);
+  });
+
+  it('ファウルは P・FT0 で足し、種類を問わず最後の1件を減らす', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    const four = id('A', '4');
+    adjustStat(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FOUL', delta: 1 });
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FOUL', foulKind: 'U', ftAwarded: 2 });
+    const active = () => listEvents(db, game.id).filter((e) => e.voidedAt === null && e.type === 'FOUL');
+    expect(active().map((e) => [e.foulKind, e.ftAwarded])).toEqual([
+      ['P', 0],
+      ['U', 2],
+    ]);
+    adjustStat(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FOUL', delta: -1 });
+    expect(active().map((e) => e.foulKind)).toEqual(['P']);
   });
 });

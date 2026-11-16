@@ -45,6 +45,8 @@
 - オレンジ（`accent`）は画面でいちばん押してほしいボタンにだけ使い、上に載せる文字は濃紺。白文字は載せない
 - 確認・通知はOS標準のアラート（`Alert.alert`）を使わず、`@/ui/dialog` の `showDialog` を使う（iOSではアラートで画面が縦に回転するため）。Modal の中身の最後には `<DialogHost />` を置く
 - アイコン・スプラッシュ（`assets/`、`app.config.ts`）の変更はOTAで配れない
+- グラフは [src/ui/charts.tsx](src/ui/charts.tsx) の部品（View で描画。SVGライブラリは未導入）を使い、系列色は `colors.chartOwn`（自チーム）と `colors.chartOpp`（相手）に固定する
+- 縦画面のタブ（`src/app/(tabs)/`）はヘッダーなし。画面上部の余白は `useSafeAreaInsets` で自前に取る
 
 ## OTA
 

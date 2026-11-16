@@ -16,6 +16,7 @@ import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Button, Card, Chip, Row, Segmented } from '@/ui/components';
 import { EventLogSheet } from '@/ui/EventLogSheet';
+import { QuickFixSheet } from '@/ui/QuickFixSheet';
 import { Text } from '@/ui/Text';
 import { colors, fonts, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
@@ -49,6 +50,7 @@ export default function GameDetailScreen() {
   const [boxSide, setBoxSide] = useState<Side>('A');
   const [periodFilter, setPeriodFilter] = useState<number | 'all'>('all');
   const [logOpen, setLogOpen] = useState(false);
+  const [fixOpen, setFixOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const sheetRef = useRef<ComponentRef<typeof View>>(null);
   const promptedRef = useRef(false);
@@ -306,6 +308,9 @@ export default function GameDetailScreen() {
             {game.teamBName || 'B'}
           </Text>
         </Row>
+        {game.status !== 'prep' && (
+          <Button title="得点・ファウルを直す" variant="secondary" small onPress={() => setFixOpen(true)} />
+        )}
       </View>
 
       <Segmented
@@ -330,6 +335,18 @@ export default function GameDetailScreen() {
         <Button title="この試合を削除" variant="ghost" small onPress={confirmDelete} />
       </View>
 
+      <QuickFixSheet
+        visible={fixOpen}
+        bundle={bundle}
+        period={filterPeriod ?? 1}
+        choosePeriod
+        onClose={() => setFixOpen(false)}
+        onChanged={reload}
+        onOpenLog={() => {
+          setFixOpen(false);
+          setLogOpen(true);
+        }}
+      />
       <EventLogSheet
         visible={logOpen}
         bundle={bundle}
@@ -343,7 +360,7 @@ export default function GameDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 12, gap: 10, paddingBottom: 60 },
-  header: { alignItems: 'center', gap: 2 },
+  header: { alignItems: 'center', gap: 6 },
   meta: { fontSize: 12, color: colors.sub },
   scoreRow: { gap: 10 },
   teamName: { flex: 1, fontSize: 15, fontWeight: '700', textAlign: 'center' },

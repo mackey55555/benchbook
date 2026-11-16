@@ -38,6 +38,9 @@ export const colors = {
   teamABg: '#e6e9ff',
   teamB: '#0b7f75',
   teamBBg: '#ddf3f0',
+  /** グラフの系列色（自チーム・相手）。色覚の違いでも見分けられる組として検証済み */
+  chartOwn: '#3f51e0',
+  chartOpp: '#e0611b',
   /** 濃紺の面の上で使うチーム色 */
   teamAOnInk: '#7c8bff',
   teamBOnInk: '#4fd1c1',
