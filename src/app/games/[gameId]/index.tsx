@@ -13,6 +13,7 @@ import { buildBoxScore, describeEvent, teamOnlyLine, type BoxScoreLine } from '@
 import type { Side } from '@/domain/types';
 import { shareImage, shareJson, sharePdf } from '@/lib/share';
 import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
+import { buildGameFlowHtml, buildPlayByPlayHtml } from '@/output/gameFlowHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Button, Card, Chip, Row, Segmented } from '@/ui/components';
 import { EventLogSheet } from '@/ui/EventLogSheet';
@@ -23,7 +24,7 @@ import { colors, fonts, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 import { showDialog } from '@/ui/dialog';
 
-type Tab = 'running' | 'box' | 'plays' | 'periods';
+type Tab = 'running' | 'box' | 'flow' | 'plays' | 'periods';
 
 const A4_RATIO = 297 / 210;
 
@@ -59,6 +60,7 @@ export default function GameDetailScreen() {
 
   const html = useMemo(() => (bundle ? buildRunningScoreHtml(bundle) : ''), [bundle]);
   const boxHtml = useMemo(() => (bundle ? buildBoxScoreHtml(bundle) : ''), [bundle]);
+  const flowHtml = useMemo(() => (bundle && tab === 'flow' ? buildGameFlowHtml(bundle) : ''), [bundle, tab]);
   const baseName = bundle
     ? `${bundle.game.date}_${bundle.game.teamAName || 'A'}_vs_${bundle.game.teamBName || 'B'}`
     : 'benchbook';
@@ -135,6 +137,8 @@ export default function GameDetailScreen() {
   };
 
   const running = () => <View style={styles.tabBody}>{sheet(html, baseName, true)}</View>;
+  // 試合の流れ（得点の流れ、時間帯別、連続得点、コート上の組み合わせ）
+  const flow = () => <View style={styles.tabBody}>{sheet(flowHtml, `${baseName}_flow`, false)}</View>;
 
   const box = () => {
     const team = buildBoxScore(events, roster, filterPeriod)[boxSide];
@@ -229,7 +233,16 @@ export default function GameDetailScreen() {
     return (
       <View style={styles.tabBody}>
         {periodChips}
-        <Button title="記録を修正・削除する" variant="secondary" small onPress={() => setLogOpen(true)} />
+        <Row>
+          <Button title="記録を修正・削除する" variant="secondary" small onPress={() => setLogOpen(true)} />
+          <Button
+            title="PDF"
+            variant="secondary"
+            small
+            disabled={busy}
+            onPress={() => share(() => sharePdf(buildPlayByPlayHtml(bundle), `${baseName}_plays`))}
+          />
+        </Row>
         {list.length === 0 && <Text style={styles.note}>記録がありません</Text>}
         {list.map((e, i) => (
           <Row key={e.id} style={styles.play}>
@@ -336,6 +349,7 @@ export default function GameDetailScreen() {
         options={[
           { value: 'running', label: 'ランニング' },
           { value: 'box', label: 'ボックス' },
+          { value: 'flow', label: '流れ' },
           { value: 'plays', label: 'プレー' },
           { value: 'periods', label: 'Q別' },
         ]}
@@ -344,6 +358,7 @@ export default function GameDetailScreen() {
       />
       {tab === 'running' && running()}
       {tab === 'box' && box()}
+      {tab === 'flow' && flow()}
       {tab === 'plays' && plays()}
       {tab === 'periods' && periodScores()}
 
