@@ -84,3 +84,9 @@ Benchbook は、バスケットボールのベンチで「控えのスコア」�
 ## 審査メモ（審査担当者向け、英語）
 
 This app works fully offline and requires no account. To try it: tap "新規試合" (New game) on the home screen, add a few jersey numbers for each team, then tap "試合開始" (Start). The live input screen is landscape-only by design.
+
+## 提出の記録
+
+- App Store Connect のアプリID：6835338670（公開後のURLは https://apps.apple.com/jp/app/id6835338670 ）
+- 本番ビルドは `eas build --profile production --platform ios`、提出は `eas submit --platform ios --latest`
+- 本番ビルドへのOTAは、配信先を `production` にして出す（確認用ビルドは `preview`）
