@@ -100,7 +100,8 @@ export default function LiveScreen() {
 
   // 練習用の試合では、次に押す場所を1つずつ案内する
   const practice = gameId === PRACTICE_GAME_ID;
-  const step = practice && bundle ? practiceStep(bundle.events, selected?.side ?? null) : null;
+  const [practiceFlags, setPracticeFlags] = useState({ foulSheetUsed: false, foulsViewed: false });
+  const step = practice && bundle ? practiceStep(bundle.events, selected?.side ?? null, practiceFlags) : null;
 
   const period = bundle?.game.currentPeriod ?? 1;
   const state = useMemo(
@@ -211,12 +212,15 @@ export default function LiveScreen() {
     router.replace('/');
   };
 
+  const skipPractice = () =>
+    showDialog('練習をスキップしますか？', '「設定 → 使い方」から、いつでもやり直せます。', [
+      { text: '続ける', style: 'cancel' },
+      { text: 'スキップする', onPress: quitPractice },
+    ]);
+
   const menu = () =>
     practice
-      ? showDialog('練習中', '練習の記録は残りません。', [
-          { text: '練習をやめる', onPress: quitPractice },
-          { text: '続ける', style: 'cancel' },
-        ])
+      ? skipPractice()
       : showDialog('メニュー', undefined, [
       { text: '試合情報・出場登録を編集', onPress: () => router.push(`/games/${gameId}/prep`) },
       {
@@ -455,6 +459,7 @@ export default function LiveScreen() {
             styles.cell,
             { backgroundColor: sideBg(cell.side), borderColor: sideBg(cell.side) },
             left === 0 && styles.actionDisabled,
+            step?.target === 'timeout' && styles.hint,
             pressed && styles.pressed,
           ]}
         >
@@ -525,9 +530,12 @@ export default function LiveScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="ファウル状況"
-          onPress={() => setFoulsOpen(true)}
+          onPress={() => {
+            setFoulsOpen(true);
+            if (practice) setPracticeFlags((f) => ({ ...f, foulsViewed: true }));
+          }}
           hitSlop={6}
-          style={styles.foulsButton}
+          style={[styles.foulsButton, step?.target === 'fouls' && styles.hintOnInk]}
         >
           <Text style={styles.foulsButtonText}>ファウル状況</Text>
         </Pressable>
@@ -542,8 +550,10 @@ export default function LiveScreen() {
         <View style={styles.center}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="記録ログを開く"
-            onPress={() => setLogOpen(true)}
+            accessibilityLabel={step ? `練習 ${step.index}/${step.total} ${step.text}` : '記録ログを開く'}
+            onPress={() => {
+              if (!step) setLogOpen(true);
+            }}
             style={[
               styles.strip,
               selected && { backgroundColor: sideBg(selected.side) },
@@ -558,6 +568,15 @@ export default function LiveScreen() {
                 <Text style={[styles.stripMain, styles.stripGuide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                   {step.text}
                 </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="練習をスキップ"
+                  onPress={skipPractice}
+                  hitSlop={10}
+                  style={styles.stripSkip}
+                >
+                  <Text style={styles.stripSkipText}>スキップ</Text>
+                </Pressable>
               </>
             ) : (
               <>
@@ -666,6 +685,7 @@ export default function LiveScreen() {
                   const foul = foulSheet;
                   setFoulSheet(null);
                   if (foul) record('FOUL', foul);
+                  if (practice) setPracticeFlags((f) => ({ ...f, foulSheetUsed: true }));
                 }}
               />
             </Row>
@@ -893,7 +913,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   stripGuide: { flex: 1, minWidth: 0, color: colors.accentText },
+  stripSkip: { paddingHorizontal: 6, paddingVertical: 4 },
+  stripSkipText: { fontSize: 12, fontWeight: '800', color: colors.accentText, textDecorationLine: 'underline' },
   hint: { borderColor: colors.accent, borderWidth: 4 },
+  hintOnInk: { borderColor: colors.accent, borderWidth: 3 },
   utilHint: { borderColor: colors.primary, borderWidth: 3 },
   stripRecent: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 12, fontWeight: '700', color: colors.mute },
   utilRow: { height: 40, flexDirection: 'row', gap: GAP },

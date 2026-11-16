@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '@/db/client';
 import { createGame, createPracticeGame, deletePracticeGame, getLiveGame, listGames } from '@/db/repo';
 import { PRACTICE_GAME_ID } from '@/domain/practice';
+import { FLAG_WELCOMED, hasFlag, setFlag } from '@/lib/flags';
+import { showDialog } from '@/ui/dialog';
 import { periodLabel } from '@/domain/rules';
 import { applyUpdate, checkForUpdate, useUpdateState } from '@/ui/appUpdate';
 import { Button, SectionTitle } from '@/ui/components';
@@ -43,6 +45,24 @@ export default function HomeScreen() {
         return;
       }
       resumedOnLaunch = true;
+      // はじめて開いたとき（試合がまだ無いとき）に一度だけ、練習するかを尋ねる
+      if (!hasFlag(FLAG_WELCOMED) && listGames(db).length === 0) {
+        setFlag(FLAG_WELCOMED);
+        showDialog(
+          'はじめに、練習してみますか？',
+          '練習用の試合で、入力のしかたを3分ほどで試せます。スキップしても、「設定 → 使い方」からいつでも見られます。',
+          [
+            { text: 'スキップ', style: 'cancel' },
+            {
+              text: '練習する',
+              onPress: () => {
+                createPracticeGame(db);
+                router.push(`/games/${PRACTICE_GAME_ID}/live`);
+              },
+            },
+          ],
+        );
+      }
       // 更新があれば取得まで済ませ、上部に案内を出す。進行中の試合があるときは確認しない（SPEC 7章）
       const autoCheck = () => {
         if (!getLiveGame(db)) void checkForUpdate(false);
@@ -53,7 +73,7 @@ export default function HomeScreen() {
         if (state === 'active') autoCheck();
       });
       return () => sub.remove();
-    }, [openGame]),
+    }, [openGame, router]),
   );
 
   const startPractice = () => {

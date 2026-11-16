@@ -22,6 +22,7 @@ import { buildFullReportHtml, buildPlayersReportHtml, buildTeamReportHtml } from
 import { GroupedBars, Legend, Meter } from '@/ui/charts';
 import { Button, Card, Chip, Row, SectionTitle, Segmented } from '@/ui/components';
 import { showDialog } from '@/ui/dialog';
+import { HelpButton } from '@/ui/HelpButton';
 import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
@@ -104,6 +105,7 @@ export default function AnalysisScreen() {
     >
       <Row>
         <Text style={[styles.title, styles.flex]}>分析</Text>
+        <HelpButton topic="analysis" />
         {analysis.games > 0 && <Button title={exporting ? '出力中…' : '共有'} small variant="secondary" disabled={exporting} onPress={shareMenu} />}
       </Row>
       <Segmented

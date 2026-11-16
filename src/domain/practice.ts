@@ -7,7 +7,15 @@ import type { GameEvent, Side } from './types';
 export const PRACTICE_GAME_ID = 'practice';
 
 /** 練習で次に押してほしい場所（入力画面のどこを目立たせるか） */
-export type PracticeTarget = 'playerA' | 'anyPlayer' | 'made2' | 'foul' | 'undo' | 'endPeriod';
+export type PracticeTarget =
+  | 'playerA'
+  | 'anyPlayer'
+  | 'made2'
+  | 'foul'
+  | 'undo'
+  | 'timeout'
+  | 'fouls'
+  | 'endPeriod';
 
 export interface PracticeStep {
   /** 何番目の手順か（1始まり）と、全体の数 */
@@ -17,13 +25,32 @@ export interface PracticeStep {
   target: PracticeTarget;
 }
 
-export const PRACTICE_STEPS = 6;
+/** 記録からは分からない、画面の操作の済み・未済 */
+export interface PracticeFlags {
+  /** FOUL の長押しで開くシートから、種類を選んで記録した */
+  foulSheetUsed: boolean;
+  /** 「ファウル状況」を開いた */
+  foulsViewed: boolean;
+}
+
+export const PRACTICE_STEPS = 10;
 
 /**
- * 練習の、いまの手順。記録の状態から決める（取り消した記録も「やったこと」として数える）。
- * 1. 自チームの選手を選ぶ → 2. 2P○ → 3. 選手を選ぶ → 4. FOUL → 5. 取り消す → 6. Q終了
+ * 練習の、いまの手順。記録の状態と画面の操作から決める（取り消した記録も「やったこと」として数える）。
+ *
+ * 1. 自チームの選手を選ぶ → 2. 2P○
+ * 3. 選手を選ぶ → 4. FOUL
+ * 5. 取り消す
+ * 6. 選手を選ぶ → 7. FOUL を長押しして種類を選ぶ
+ * 8. タイムアウト
+ * 9. ファウル状況を見る
+ * 10. Q終了
  */
-export function practiceStep(events: readonly GameEvent[], selectedSide: Side | null): PracticeStep {
+export function practiceStep(
+  events: readonly GameEvent[],
+  selectedSide: Side | null,
+  flags: PracticeFlags,
+): PracticeStep {
   const step = (index: number, text: string, target: PracticeTarget): PracticeStep => ({
     index,
     total: PRACTICE_STEPS,
@@ -44,5 +71,13 @@ export function practiceStep(events: readonly GameEvent[], selectedSide: Side | 
   }
   const undone = events.some((e) => e.voidedAt !== null);
   if (!undone) return step(5, '押し間違えたら「取り消す」。押してみましょう', 'undo');
-  return step(6, 'Qが終わったら「Q1 終了」をタップ', 'endPeriod');
+  if (!flags.foulSheetUsed) {
+    return selectedSide !== null
+      ? step(7, '「FOUL」を長押し → 種類を選んで「記録」', 'foul')
+      : step(6, 'ファウルの種類を選ぶ練習。番号をタップ', 'anyPlayer');
+  }
+  const timeout = events.some((e) => e.type === 'TIMEOUT');
+  if (!timeout) return step(8, 'タイムアウトは「TO」をタップ（選手は選びません）', 'timeout');
+  if (!flags.foulsViewed) return step(9, '右上の「ファウル状況」で、全員のファウルを確認', 'fouls');
+  return step(10, 'Qが終わったら「Q1 終了」をタップ', 'endPeriod');
 }
