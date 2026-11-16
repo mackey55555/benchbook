@@ -138,6 +138,12 @@ export default function AnalysisScreen() {
           ) : (
             <PlayersView analysis={analysis} mode={mode} range={range} sortKey={sortKey} onSort={setSortKey} />
           )}
+          <View style={styles.notice}>
+            <Text style={styles.noticeTitle}>分析は、いまはすべて無料で使えます</Text>
+            <Text style={styles.noticeBody}>
+              今後チームプラン（有料）を始めたあとは、無料で見られる分析は直近3試合までになる予定です。試合の記録と、試合ごとのスコアシートの共有は、その後も無料で使えます。
+            </Text>
+          </View>
         </>
       )}
       <ShareSheet visible={shareOpen} html={shareHtml} name={shareName} onClose={() => setShareOpen(false)} />
@@ -373,6 +379,9 @@ const styles = StyleSheet.create({
   th: { fontSize: 11, fontWeight: '700', color: colors.sub },
   tdName: { flex: 1, fontSize: 14, color: colors.text },
   td: { width: 72, textAlign: 'right', fontSize: 20, color: colors.text },
+  notice: { backgroundColor: colors.accentBg, borderRadius: radius.lg, padding: 14, gap: 4, marginTop: 8 },
+  noticeTitle: { fontSize: 13, fontWeight: '800', color: colors.accentInk },
+  noticeBody: { fontSize: 12, lineHeight: 18, color: colors.accentInk },
   playerHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   playerNo: { width: 24, fontSize: 22, color: colors.text, textAlign: 'right' },
   playerName: { flex: 1, fontSize: 12, fontWeight: '700', color: colors.text },
