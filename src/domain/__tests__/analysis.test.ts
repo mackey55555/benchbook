@@ -224,7 +224,8 @@ describe('共有用シート（HTML）', () => {
 
   it('チーム名・相手名をエスケープして載せる', () => {
     const out = html.buildTeamReportHtml(a, { rangeLabel: '今年度', mode: 'avg' });
-    expect(out).toContain('&lt;A組&gt; チーム成績');
+    expect(out).toContain('<h1>TEAM STATS</h1>');
+    expect(out).toContain('&lt;A組&gt;<br>期間：今年度');
     expect(out).toContain('B&amp;組');
     expect(out).toContain('1勝 0敗');
     expect(out).not.toContain('<A組>');
@@ -232,13 +233,15 @@ describe('共有用シート（HTML）', () => {
 
   it('選手の比較表は指定した項目の多い順に並ぶ', () => {
     const out = html.buildPlayersReportHtml(a, { rangeLabel: 'すべて', mode: 'total', sortKey: 'fg2m' });
-    expect(out.indexOf('<td class="b">5</td>')).toBeLessThan(out.indexOf('<td class="b">4</td>'));
+    expect(out.indexOf('<td class="no">5</td>')).toBeLessThan(out.indexOf('<td class="no">4</td>'));
   });
 
   it('まとめは、チーム・比較表・記録のある選手の順に1シートずつ入る', () => {
     const out = html.buildFullReportHtml(a, { rangeLabel: 'すべて', mode: 'avg', sortKey: 'pts' });
-    const titles = [...out.matchAll(/<h1>(.*?)<\/h1>/g)].map((m) => m[1]);
-    expect(titles).toEqual(['&lt;A組&gt; チーム成績', '&lt;A組&gt; 選手成績', '#4 選手成績', '#5 選手成績']);
+    const labels = [...out.matchAll(/<div class="sub">【(.*?)】/g)].map((m) => m[1]);
+    expect(labels).toEqual(['チーム成績', '選手成績', '選手成績', '選手成績']);
+    const numbers = [...out.matchAll(/<div class="no">(.*?)<\/div>/g)].map((m) => m[1]);
+    expect(numbers).toEqual(['4', '5']);
   });
 
   it('選手個人のシートに合計・平均と試合ごとの成績が入る', () => {

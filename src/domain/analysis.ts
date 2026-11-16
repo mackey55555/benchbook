@@ -309,54 +309,60 @@ export interface StatColumn {
    * time（出場時間・秒）と pm（+/-）は、先発と交代を記録した試合の分だけを集計し、平均もその試合数で割る
    */
   kind: 'count' | 'pct' | 'time' | 'pm';
+  /** 表の見出しを2段にするときのまとまり（例：3P FG）と、その中での表記（M・A・%） */
+  group?: string;
+  sub?: string;
   get: (line: StatLine) => number | null;
 }
 
-const count = (key: (typeof LINE_KEYS)[number], label: string, name: string): StatColumn => ({
-  key,
-  label,
-  name,
-  kind: 'count',
-  get: (l) => l[key],
-});
+const count = (
+  key: (typeof LINE_KEYS)[number],
+  label: string,
+  name: string,
+  group?: { group: string; sub: string },
+): StatColumn => ({ key, label, name, kind: 'count', get: (l) => l[key], ...group });
 const rate = (
   key: string,
   label: string,
   name: string,
   made: (typeof LINE_KEYS)[number],
   att: (typeof LINE_KEYS)[number],
-): StatColumn => ({ key, label, name, kind: 'pct', get: (l) => pct(l[made], l[att]) });
+  group: string,
+): StatColumn => ({ key, label, name, kind: 'pct', get: (l) => pct(l[made], l[att]), group, sub: '%' });
 
-/** チーム合計にも出せる成績の項目（表の列順） */
+/**
+ * チーム合計にも出せる成績の項目。
+ * 並び順と見出しは、試合ごとのボックススコアのシート（src/output/boxScoreHtml.ts）に合わせる：
+ * PTS、3P、2P、FT、F、リバウンド（OR・DR・TR）、TO、AS、ST、BS。
+ */
 export const TEAM_STAT_COLUMNS: readonly StatColumn[] = [
   count('pts', 'PTS', '得点'),
-  count('fg2m', '2PM', '2P成功'),
-  count('fg2a', '2PA', '2P試投'),
-  rate('fg2p', '2P%', '2P成功率', 'fg2m', 'fg2a'),
-  count('fg3m', '3PM', '3P成功'),
-  count('fg3a', '3PA', '3P試投'),
-  rate('fg3p', '3P%', '3P成功率', 'fg3m', 'fg3a'),
-  count('ftm', 'FTM', 'FT成功'),
-  count('fta', 'FTA', 'FT試投'),
-  rate('ftp', 'FT%', 'FT成功率', 'ftm', 'fta'),
-  count('oreb', 'OR', 'OFリバウンド'),
-  count('dreb', 'DR', 'DFリバウンド'),
-  count('reb', 'REB', 'リバウンド'),
-  count('ast', 'AST', 'アシスト'),
-  count('stl', 'STL', 'スティール'),
-  count('blk', 'BLK', 'ブロック'),
+  count('fg3m', '3PM', '3P成功', { group: '3P FG', sub: 'M' }),
+  count('fg3a', '3PA', '3P試投', { group: '3P FG', sub: 'A' }),
+  rate('fg3p', '3P%', '3P成功率', 'fg3m', 'fg3a', '3P FG'),
+  count('fg2m', '2PM', '2P成功', { group: '2P FG', sub: 'M' }),
+  count('fg2a', '2PA', '2P試投', { group: '2P FG', sub: 'A' }),
+  rate('fg2p', '2P%', '2P成功率', 'fg2m', 'fg2a', '2P FG'),
+  count('ftm', 'FTM', 'FT成功', { group: 'FT', sub: 'M' }),
+  count('fta', 'FTA', 'FT試投', { group: 'FT', sub: 'A' }),
+  rate('ftp', 'FT%', 'FT成功率', 'ftm', 'fta', 'FT'),
+  count('pf', 'F', 'ファウル'),
+  count('oreb', 'OR', 'OFリバウンド', { group: 'REBOUNDS', sub: 'OR' }),
+  count('dreb', 'DR', 'DFリバウンド', { group: 'REBOUNDS', sub: 'DR' }),
+  count('reb', 'TR', 'リバウンド', { group: 'REBOUNDS', sub: 'TR' }),
   count('tov', 'TO', 'ターンオーバー'),
-  count('pf', 'PF', 'ファウル'),
+  count('ast', 'AS', 'アシスト'),
+  count('stl', 'ST', 'スティール'),
+  count('blk', 'BS', 'ブロック'),
 ];
 
 const lineupValue = (key: 'seconds' | 'plusMinus') => (l: StatLine) => (l.lineupGames ? (l[key] ?? 0) : null);
 
-/** 選手の成績の項目。チームの項目に、出場時間と +/- を足したもの */
+/** 選手の成績の項目。チームの項目の後ろに、ボックススコアと同じく出場時間と +/- を置く */
 export const STAT_COLUMNS: readonly StatColumn[] = [
-  TEAM_STAT_COLUMNS[0],
+  ...TEAM_STAT_COLUMNS,
   { key: 'min', label: 'MIN', name: '出場時間', kind: 'time', get: lineupValue('seconds') },
   { key: 'pm', label: '+/-', name: '+/-', kind: 'pm', get: lineupValue('plusMinus') },
-  ...TEAM_STAT_COLUMNS.slice(1),
 ];
 
 export function statColumn(key: string): StatColumn {

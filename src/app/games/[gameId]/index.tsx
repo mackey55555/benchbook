@@ -26,19 +26,20 @@ type Tab = 'running' | 'box' | 'plays' | 'periods';
 
 const A4_RATIO = 297 / 210;
 
+// 並び順と見出しは、ボックススコアのシート（src/output/boxScoreHtml.ts）に合わせる
 const BOX_COLUMNS: { key: string; label: string; value: (l: BoxScoreLine) => string }[] = [
   { key: 'pts', label: 'PTS', value: (l) => String(l.pts) },
-  { key: 'fg2', label: '2PM-A', value: (l) => `${l.fg2m}-${l.fg2a}` },
-  { key: 'fg3', label: '3PM-A', value: (l) => `${l.fg3m}-${l.fg3a}` },
-  { key: 'ft', label: 'FTM-A', value: (l) => `${l.ftm}-${l.fta}` },
-  { key: 'oreb', label: 'OREB', value: (l) => String(l.oreb) },
-  { key: 'dreb', label: 'DREB', value: (l) => String(l.dreb) },
-  { key: 'reb', label: 'REB', value: (l) => String(l.reb) },
-  { key: 'ast', label: 'AST', value: (l) => String(l.ast) },
-  { key: 'stl', label: 'STL', value: (l) => String(l.stl) },
-  { key: 'blk', label: 'BLK', value: (l) => String(l.blk) },
-  { key: 'tov', label: 'TOV', value: (l) => String(l.tov) },
-  { key: 'pf', label: 'PF', value: (l) => String(l.pf) },
+  { key: 'fg3', label: '3P M-A', value: (l) => `${l.fg3m}-${l.fg3a}` },
+  { key: 'fg2', label: '2P M-A', value: (l) => `${l.fg2m}-${l.fg2a}` },
+  { key: 'ft', label: 'FT M-A', value: (l) => `${l.ftm}-${l.fta}` },
+  { key: 'pf', label: 'F', value: (l) => String(l.pf) },
+  { key: 'oreb', label: 'OR', value: (l) => String(l.oreb) },
+  { key: 'dreb', label: 'DR', value: (l) => String(l.dreb) },
+  { key: 'reb', label: 'TR', value: (l) => String(l.reb) },
+  { key: 'tov', label: 'TO', value: (l) => String(l.tov) },
+  { key: 'ast', label: 'AS', value: (l) => String(l.ast) },
+  { key: 'stl', label: 'ST', value: (l) => String(l.stl) },
+  { key: 'blk', label: 'BS', value: (l) => String(l.blk) },
 ];
 
 export default function GameDetailScreen() {
