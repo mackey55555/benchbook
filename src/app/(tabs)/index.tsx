@@ -5,7 +5,10 @@ import { AppState, Image, Pressable, ScrollView, StyleSheet, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
-import { createGame, getLiveGame, listGames } from '@/db/repo';
+import { createGame, createPracticeGame, deletePracticeGame, getLiveGame, listGames } from '@/db/repo';
+import { PRACTICE_GAME_ID } from '@/domain/practice';
+import { FLAG_WELCOMED, hasFlag, setFlag } from '@/lib/flags';
+import { showDialog } from '@/ui/dialog';
 import { periodLabel } from '@/domain/rules';
 import { applyUpdate, checkForUpdate, useUpdateState } from '@/ui/appUpdate';
 import { Button, SectionTitle } from '@/ui/components';
@@ -33,6 +36,8 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // 途中でやめた練習が残っていれば片づける
+      deletePracticeGame(db);
       const current = getLiveGame(db);
       if (current && !resumedOnLaunch) {
         resumedOnLaunch = true;
@@ -40,6 +45,24 @@ export default function HomeScreen() {
         return;
       }
       resumedOnLaunch = true;
+      // はじめて開いたとき（試合がまだ無いとき）に一度だけ、練習するかを尋ねる
+      if (!hasFlag(FLAG_WELCOMED) && listGames(db).length === 0) {
+        setFlag(FLAG_WELCOMED);
+        showDialog(
+          'はじめに、練習してみますか？',
+          '練習用の試合で、入力のしかたを3分ほどで試せます。スキップしても、「設定 → 使い方」からいつでも見られます。',
+          [
+            { text: 'スキップ', style: 'cancel' },
+            {
+              text: '練習する',
+              onPress: () => {
+                createPracticeGame(db);
+                router.push(`/games/${PRACTICE_GAME_ID}/live`);
+              },
+            },
+          ],
+        );
+      }
       // 更新があれば取得まで済ませ、上部に案内を出す。進行中の試合があるときは確認しない（SPEC 7章）
       const autoCheck = () => {
         if (!getLiveGame(db)) void checkForUpdate(false);
@@ -50,8 +73,13 @@ export default function HomeScreen() {
         if (state === 'active') autoCheck();
       });
       return () => sub.remove();
-    }, [openGame]),
+    }, [openGame, router]),
   );
+
+  const startPractice = () => {
+    createPracticeGame(db);
+    router.push(`/games/${PRACTICE_GAME_ID}/live`);
+  };
 
   const newGame = () => {
     const game = createGame(db);
@@ -148,7 +176,23 @@ export default function HomeScreen() {
           </Pressable>
         )}
       </View>
-      {games.length === 0 && <Text style={styles.empty}>まだ試合がありません。「新規試合」から始めましょう</Text>}
+      {games.length === 0 && (
+        <View style={styles.welcome}>
+          <Text style={styles.welcomeTitle}>はじめての方へ</Text>
+          <Text style={styles.welcomeBody}>
+            練習用の試合で、次に押す場所を案内します。3分ほどで入力のしかたが分かります。練習の記録は残りません。
+          </Text>
+          <Button title="練習してみる" variant="accent" onPress={startPractice} />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/help')}
+            hitSlop={10}
+            style={({ pressed }) => [styles.welcomeLink, pressed && styles.pressed]}
+          >
+            <Text style={styles.welcomeLinkText}>使い方を読む</Text>
+          </Pressable>
+        </View>
+      )}
       {recent.map((row) => (
         <GameRow key={row.game.id} row={row} onChanged={refresh} />
       ))}
@@ -213,5 +257,9 @@ const styles = StyleSheet.create({
   newGameBody: { fontSize: 12, color: colors.sub },
   listHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   more: { fontSize: 13, fontWeight: '700', color: colors.text, textDecorationLine: 'underline' },
-  empty: { color: colors.sub, fontSize: 14, paddingVertical: 12 },
+  welcome: { backgroundColor: colors.card, borderRadius: radius.lg, padding: 18, gap: 10 },
+  welcomeTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
+  welcomeBody: { fontSize: 13, lineHeight: 20, color: colors.sub },
+  welcomeLink: { alignSelf: 'center', paddingVertical: 4 },
+  welcomeLinkText: { fontSize: 13, fontWeight: '700', color: colors.text, textDecorationLine: 'underline' },
 });

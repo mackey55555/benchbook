@@ -6,7 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
 import { db } from '@/db/client';
-import { cancelPeriodEnd, confirmPeriod, isPeriodEnded, recordMismatch } from '@/db/repo';
+import { cancelPeriodEnd, confirmPeriod, deletePracticeGame, isPeriodEnded, recordMismatch } from '@/db/repo';
+import { PRACTICE_GAME_ID } from '@/domain/practice';
 import {
   RULES,
   computeScore,
@@ -59,7 +60,22 @@ export default function CheckScreen() {
   };
 
   // 第4Q以降が同点のときは、延長に進むか、同点のまま終えるかを選ぶ（引き分けのある大会・練習試合のため）
+  const practice = gameId === PRACTICE_GAME_ID;
+
   const confirm = () => {
+    // 練習はここで終わり。記録は残さない
+    if (practice) {
+      showDialog('練習はここまでです', '実際の試合では、「一致」で次のQに進みます。「新規試合」から本番の記録を始められます。', [
+        {
+          text: 'ホームに戻る',
+          onPress: () => {
+            deletePracticeGame(db);
+            router.replace('/');
+          },
+        },
+      ]);
+      return;
+    }
     const tied = period >= RULES.regulationPeriods && total.A === total.B;
     if (!tied) return proceed(false);
     showDialog(`${total.A} - ${total.B} の同点です`, 'どちらにしますか？', [
@@ -112,6 +128,11 @@ export default function CheckScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <Text style={styles.title}>{periodLabel(period)} 終了　オフィシャルの記録と照合してください</Text>
+      {practice && (
+        <Text style={styles.practice}>
+          練習：Qの終わりに、ここの数字をオフィシャルの記録と見比べます。合っていれば「一致」をタップ
+        </Text>
+      )}
       <View style={styles.body}>
         {column('A')}
         <View style={styles.actions}>
@@ -152,6 +173,18 @@ export default function CheckScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   title: { textAlign: 'center', fontSize: 16, fontWeight: '700', color: colors.text, paddingVertical: 8 },
+  practice: {
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.accentText,
+    backgroundColor: colors.accent,
+    marginHorizontal: 12,
+    marginBottom: 6,
+    paddingVertical: 5,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
   body: { flex: 1, flexDirection: 'row', gap: 12, paddingHorizontal: 12, paddingBottom: 8 },
   column: {
     flex: 1,

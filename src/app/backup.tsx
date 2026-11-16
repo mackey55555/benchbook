@@ -5,7 +5,10 @@ import { exportAll, importBackup, parseBackup } from '@/db/backup';
 import { db } from '@/db/client';
 import { RepoError } from '@/db/repo';
 import { pickJsonText, shareJson } from '@/lib/share';
+import { Stack } from 'expo-router';
+
 import { Button, Card, SectionTitle } from '@/ui/components';
+import { HelpButton } from '@/ui/HelpButton';
 import { Text } from '@/ui/Text';
 import { colors } from '@/ui/theme';
 import { showDialog } from '@/ui/dialog';
@@ -48,6 +51,7 @@ export default function BackupScreen() {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
+      <Stack.Screen options={{ headerRight: () => <HelpButton topic="backup" /> }} />
       <SectionTitle>書き出し</SectionTitle>
       <Card>
         <Text style={styles.body}>

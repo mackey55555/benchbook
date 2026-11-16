@@ -16,7 +16,9 @@ import {
   setLastTwoMinutes,
   substitute,
   undoLastEvent,
+  deletePracticeGame,
 } from '@/db/repo';
+import { PRACTICE_GAME_ID, practiceStep } from '@/domain/practice';
 import { ON_COURT_MAX, clockDigitsLabel, parseClockDigits, periodSeconds } from '@/domain/lineup';
 import { RULES, activeEvents, periodLabel } from '@/domain/rules';
 import { deriveGameState, describeEvent, type PlayerState, type TeamState } from '@/domain/stats';
@@ -95,6 +97,11 @@ export default function LiveScreen() {
   const [adding, setAdding] = useState<{ side: Side; number: string } | null>(null);
   // 交代シート：交代後にコート上にいる選手と、残り時間（テンキーの数字。空なら時刻なし）
   const [subSheet, setSubSheet] = useState<{ side: Side; court: string[]; clock: string } | null>(null);
+
+  // 練習用の試合では、次に押す場所を1つずつ案内する
+  const practice = gameId === PRACTICE_GAME_ID;
+  const [practiceFlags, setPracticeFlags] = useState({ foulSheetUsed: false, foulsViewed: false });
+  const step = practice && bundle ? practiceStep(bundle.events, selected?.side ?? null, practiceFlags) : null;
 
   const period = bundle?.game.currentPeriod ?? 1;
   const state = useMemo(
@@ -200,8 +207,21 @@ export default function LiveScreen() {
     }
   };
 
+  const quitPractice = () => {
+    deletePracticeGame(db);
+    router.replace('/');
+  };
+
+  const skipPractice = () =>
+    showDialog('練習をスキップしますか？', '「設定 → 使い方」から、いつでもやり直せます。', [
+      { text: '続ける', style: 'cancel' },
+      { text: 'スキップする', onPress: quitPractice },
+    ]);
+
   const menu = () =>
-    showDialog('メニュー', undefined, [
+    practice
+      ? skipPractice()
+      : showDialog('メニュー', undefined, [
       { text: '試合情報・出場登録を編集', onPress: () => router.push(`/games/${gameId}/prep`) },
       {
         text: 'ホームに戻る（試合は続行）',
@@ -223,8 +243,8 @@ export default function LiveScreen() {
             },
           ]),
       },
-      { text: 'キャンセル', style: 'cancel' },
-    ]);
+          { text: 'キャンセル', style: 'cancel' },
+        ]);
 
   const confirmSub = () => {
     if (!subSheet) return;
@@ -279,6 +299,7 @@ export default function LiveScreen() {
           benched && styles.cellBenched,
           active && { backgroundColor: sideColor(side), borderColor: sideColor(side), opacity: 1 },
           out && styles.cellOut,
+          !active && (step?.target === 'anyPlayer' || (step?.target === 'playerA' && side === 'A')) && styles.hint,
         ]}
       >
         <Text
@@ -410,7 +431,13 @@ export default function LiveScreen() {
           onPress={onFoulPress}
           onLongPress={openFoulSheet}
           delayLongPress={350}
-          style={({ pressed }) => [styles.cell, styles.foul, !selected && styles.actionDisabled, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.cell,
+            styles.foul,
+            !selected && styles.actionDisabled,
+            step?.target === 'foul' && styles.hint,
+            pressed && styles.pressed,
+          ]}
         >
           <Text style={styles.foulText}>FOUL</Text>
           <Text style={styles.foulHint} numberOfLines={1}>
@@ -432,6 +459,7 @@ export default function LiveScreen() {
             styles.cell,
             { backgroundColor: sideBg(cell.side), borderColor: sideBg(cell.side) },
             left === 0 && styles.actionDisabled,
+            step?.target === 'timeout' && styles.hint,
             pressed && styles.pressed,
           ]}
         >
@@ -456,6 +484,7 @@ export default function LiveScreen() {
           cell.tone === 'made' && styles.actionMade,
           cell.tone === 'miss' && styles.actionMiss,
           disabled && styles.actionDisabled,
+          step?.target === 'made2' && cell.type === 'FG2_MADE' && styles.hint,
           pressed && styles.pressed,
         ]}
       >
@@ -501,9 +530,12 @@ export default function LiveScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="ファウル状況"
-          onPress={() => setFoulsOpen(true)}
+          onPress={() => {
+            setFoulsOpen(true);
+            if (practice) setPracticeFlags((f) => ({ ...f, foulsViewed: true }));
+          }}
           hitSlop={6}
-          style={styles.foulsButton}
+          style={[styles.foulsButton, step?.target === 'fouls' && styles.hintOnInk]}
         >
           <Text style={styles.foulsButtonText}>ファウル状況</Text>
         </Pressable>
@@ -518,16 +550,44 @@ export default function LiveScreen() {
         <View style={styles.center}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="記録ログを開く"
-            onPress={() => setLogOpen(true)}
-            style={[styles.strip, selected && { backgroundColor: sideBg(selected.side) }]}
+            accessibilityLabel={step ? `練習 ${step.index}/${step.total} ${step.text}` : '記録ログを開く'}
+            onPress={() => {
+              if (!step) setLogOpen(true);
+            }}
+            style={[
+              styles.strip,
+              selected && { backgroundColor: sideBg(selected.side) },
+              step && styles.stripPractice,
+            ]}
           >
-            <Text style={[styles.stripMain, !selected && { color: colors.sub }]} numberOfLines={1}>
-              {selected ? `${selectedLabel} の記録をえらぶ` : '選手をタップ'}
-            </Text>
-            <Text style={styles.stripRecent} numberOfLines={1}>
-              {recent.length ? `直前：${recent[0]}` : '記録なし'}
-            </Text>
+            {step ? (
+              <>
+                <Text style={styles.stripStep}>
+                  練習 {step.index}/{step.total}
+                </Text>
+                <Text style={[styles.stripMain, styles.stripGuide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                  {step.text}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="練習をスキップ"
+                  onPress={skipPractice}
+                  hitSlop={10}
+                  style={styles.stripSkip}
+                >
+                  <Text style={styles.stripSkipText}>スキップ</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.stripMain, !selected && { color: colors.sub }]} numberOfLines={1}>
+                  {selected ? `${selectedLabel} の記録をえらぶ` : '選手をタップ'}
+                </Text>
+                <Text style={styles.stripRecent} numberOfLines={1}>
+                  {recent.length ? `直前：${recent[0]}` : '記録なし'}
+                </Text>
+              </>
+            )}
           </Pressable>
 
           {ACTIONS.map((row, r) => (
@@ -537,7 +597,12 @@ export default function LiveScreen() {
           ))}
 
           <View style={styles.utilRow}>
-            <Pressable accessibilityRole="button" accessibilityLabel="UNDO" onPress={undo} style={[styles.util, styles.undo]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="UNDO"
+              onPress={undo}
+              style={[styles.util, styles.undo, step?.target === 'undo' && styles.utilHint]}
+            >
               <Ionicons name="arrow-undo" size={16} color={colors.warn} />
               <Text style={[styles.utilText, { color: colors.warn }]}>取り消す</Text>
             </Pressable>
@@ -567,7 +632,7 @@ export default function LiveScreen() {
               accessibilityRole="button"
               accessibilityLabel="Q終了"
               onPress={finishPeriod}
-              style={[styles.util, { backgroundColor: colors.accent }]}
+              style={[styles.util, { backgroundColor: colors.accent }, step?.target === 'endPeriod' && styles.utilHint]}
             >
               <Text style={styles.utilText}>{periodLabel(period)} 終了</Text>
             </Pressable>
@@ -620,6 +685,7 @@ export default function LiveScreen() {
                   const foul = foulSheet;
                   setFoulSheet(null);
                   if (foul) record('FOUL', foul);
+                  if (practice) setPracticeFlags((f) => ({ ...f, foulSheetUsed: true }));
                 }}
               />
             </Row>
@@ -834,6 +900,24 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stripMain: { fontSize: 14, fontWeight: '800', color: colors.text },
+  // 練習の案内。次に押す場所は、同じ色の太い枠で示す
+  stripPractice: { backgroundColor: colors.accent },
+  stripStep: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primaryText,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  stripGuide: { flex: 1, minWidth: 0, color: colors.accentText },
+  stripSkip: { paddingHorizontal: 6, paddingVertical: 4 },
+  stripSkipText: { fontSize: 12, fontWeight: '800', color: colors.accentText, textDecorationLine: 'underline' },
+  hint: { borderColor: colors.accent, borderWidth: 4 },
+  hintOnInk: { borderColor: colors.accent, borderWidth: 3 },
+  utilHint: { borderColor: colors.primary, borderWidth: 3 },
   stripRecent: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 12, fontWeight: '700', color: colors.mute },
   utilRow: { height: 40, flexDirection: 'row', gap: GAP },
   util: {

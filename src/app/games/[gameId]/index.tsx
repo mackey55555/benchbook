@@ -16,6 +16,7 @@ import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Button, Card, Chip, Row, Segmented } from '@/ui/components';
 import { EventLogSheet } from '@/ui/EventLogSheet';
+import { HelpButton } from '@/ui/HelpButton';
 import { QuickFixSheet } from '@/ui/QuickFixSheet';
 import { Text } from '@/ui/Text';
 import { colors, fonts, sideColor } from '@/ui/theme';
@@ -293,7 +294,7 @@ export default function GameDetailScreen() {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
-      <Stack.Screen options={{ title: game.date }} />
+      <Stack.Screen options={{ title: game.date, headerRight: () => <HelpButton topic="after" /> }} />
       <View style={styles.header}>
         <Text style={styles.meta}>
           {[game.leagueName, game.venue].filter(Boolean).join('　') || ' '}

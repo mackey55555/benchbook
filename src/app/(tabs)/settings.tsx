@@ -16,6 +16,7 @@ import { colors, radius } from '@/ui/theme';
 import { useRefresh } from '@/ui/useGame';
 
 const LINKS = [
+  { href: '/help', label: '使い方', body: '操作の説明と、練習用の試合', icon: 'help-circle-outline', bg: colors.accentBg },
   { href: '/teams', label: 'チーム・選手', body: '自チームと相手チームの選手を登録する', icon: 'people-outline', bg: colors.teamABg },
   { href: '/backup', label: 'バックアップ', body: '記録を書き出す・読み込む', icon: 'share-outline', bg: colors.teamBBg },
 ] as const;

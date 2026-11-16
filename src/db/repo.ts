@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, max, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, max, ne, notInArray } from 'drizzle-orm';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 
 import {
@@ -12,6 +12,7 @@ import {
   type AfterPeriod,
 } from '@/domain/rules';
 import type { FixStat } from '@/domain/analysis';
+import { PRACTICE_GAME_ID } from '@/domain/practice';
 import type { EventType, FoulKind, GameEvent, RosterEntry, Score, Side } from '@/domain/types';
 import { ON_COURT_MAX, onCourtIds, periodSeconds } from '@/domain/lineup';
 import { ulid } from '@/lib/ulid';
@@ -188,6 +189,54 @@ export function createGame(db: Db): Game {
   return game;
 }
 
+/**
+ * 練習用の試合を作り直して、入力できる状態（第1Q）で返す。
+ * 架空の2チームに5人ずつ登録する。選手マスタや実際の試合には触れない。
+ */
+export function createPracticeGame(db: Db): Game {
+  deleteGame(db, PRACTICE_GAME_ID);
+  const game: Game = {
+    id: PRACTICE_GAME_ID,
+    date: todayString(),
+    leagueName: '練習',
+    venue: '',
+    ownSide: 'A',
+    teamAName: '自チーム（練習）',
+    teamBName: '相手（練習）',
+    periodMinutes: RULES.defaultPeriodMinutes,
+    otMinutes: RULES.defaultOvertimeMinutes,
+    status: 'live',
+    currentPeriod: 1,
+    createdAt: Date.now(),
+    finishedAt: null,
+  };
+  db.transaction((tx) => {
+    tx.insert(games).values(game).run();
+    for (const side of ['A', 'B'] as const) {
+      for (const number of ['4', '5', '6', '7', '8']) {
+        tx.insert(gameRoster)
+          .values({
+            id: `${PRACTICE_GAME_ID}-${side}${number}`,
+            gameId: game.id,
+            side,
+            playerId: null,
+            number,
+            name: '',
+            isStarter: false,
+            isCaptain: false,
+          })
+          .run();
+      }
+    }
+  });
+  return game;
+}
+
+/** 練習用の試合を消す（無ければ何もしない） */
+export function deletePracticeGame(db: Db): void {
+  deleteGame(db, PRACTICE_GAME_ID);
+}
+
 export function getGame(db: Db, id: string): Game | undefined {
   return db.select().from(games).where(eq(games.id, id)).get();
 }
@@ -196,13 +245,19 @@ export function getLiveGame(db: Db): Game | undefined {
   return db
     .select()
     .from(games)
-    .where(eq(games.status, 'live'))
+    .where(and(eq(games.status, 'live'), ne(games.id, PRACTICE_GAME_ID)))
     .orderBy(desc(games.createdAt))
     .get();
 }
 
 export function listGames(db: Db): GameSummary[] {
-  const rows = db.select().from(games).orderBy(desc(games.date), desc(games.createdAt)).all();
+  // 練習用の試合は一覧・分析に出さない
+  const rows = db
+    .select()
+    .from(games)
+    .where(ne(games.id, PRACTICE_GAME_ID))
+    .orderBy(desc(games.date), desc(games.createdAt))
+    .all();
   const scoring = db
     .select({ gameId: gameEvents.gameId, side: gameEvents.side, type: gameEvents.type })
     .from(gameEvents)
@@ -962,7 +1017,11 @@ export function reopenGame(db: Db, gameId: string): void {
   db.transaction((tx) => {
     const game = tx.select().from(games).where(eq(games.id, gameId)).get();
     if (!game || game.status !== 'finished') return;
-    const live = tx.select().from(games).where(eq(games.status, 'live')).get();
+    const live = tx
+      .select()
+      .from(games)
+      .where(and(eq(games.status, 'live'), ne(games.id, PRACTICE_GAME_ID)))
+      .get();
     if (live) throw new RepoError('進行中の試合があります。先にその試合を終了してください');
     const markers = activeMarkers(tx, gameId, 'PERIOD_END', game.currentPeriod);
     if (markers.length > 0) {
