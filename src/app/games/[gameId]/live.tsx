@@ -145,8 +145,8 @@ export default function LiveScreen() {
     void Haptics.impactAsync(
       type === 'FOUL' ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light,
     );
-    // FTは続けて入力できるよう選択を維持する。それ以外は誤入力防止のため解除
-    if (type !== 'FT_MADE' && type !== 'FT_MISS') setSelected(null);
+    // 誤入力防止のため、記録のたびに選択を解除する（FTも1本ずつ選び直す）
+    setSelected(null);
   };
 
   const openFoulSheet = () => {
