@@ -29,7 +29,15 @@ const config: ExpoConfig = {
       ITSAppUsesNonExemptEncryption: false,
     },
   },
-  plugins: ['expo-router', 'expo-sqlite', 'expo-sharing', 'expo-screen-orientation'],
+  plugins: [
+    'expo-router',
+    'expo-sqlite',
+    'expo-sharing',
+    'expo-screen-orientation',
+    'expo-font',
+    // 濃紺の地に、アイコンとロゴをまとめた画像を中央に置く
+    ['expo-splash-screen', { backgroundColor: '#16203a', image: './assets/splash.png', imageWidth: 260 }],
+  ],
   experiments: {
     typedRoutes: true,
   },

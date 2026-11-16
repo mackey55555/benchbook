@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 
 import { db } from '@/db/client';
 import { createTeam, ensureOwnTeam, listPlayers, listTeams } from '@/db/repo';
 import { Button, Row, SectionTitle, styles as ui } from '@/ui/components';
+import { Text } from '@/ui/Text';
 import { colors } from '@/ui/theme';
 import { attempt, useRefresh } from '@/ui/useGame';
 
@@ -70,15 +71,13 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: 14,
     backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
+    borderRadius: 16,
   },
   name: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
   own: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.teamA,
     backgroundColor: colors.teamABg,
     paddingHorizontal: 8,
     paddingVertical: 3,

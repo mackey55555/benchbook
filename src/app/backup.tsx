@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 
 import { exportAll, importBackup, parseBackup } from '@/db/backup';
 import { db } from '@/db/client';
 import { RepoError } from '@/db/repo';
 import { pickJsonText, shareJson } from '@/lib/share';
 import { Button, Card, SectionTitle } from '@/ui/components';
+import { Text } from '@/ui/Text';
 import { colors } from '@/ui/theme';
+import { showDialog } from '@/ui/dialog';
 
 export default function BackupScreen() {
   const [busy, setBusy] = useState(false);
@@ -18,7 +20,7 @@ export default function BackupScreen() {
     try {
       await action();
     } catch (e) {
-      Alert.alert(
+      showDialog(
         e instanceof RepoError ? '読み込めませんでした' : 'エラー',
         e instanceof Error ? e.message : String(e),
       );

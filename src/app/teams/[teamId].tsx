@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { db } from '@/db/client';
 import {
@@ -13,8 +13,10 @@ import {
   updatePlayer,
 } from '@/db/repo';
 import { Button, CommitInput, Row, SectionTitle, styles as ui } from '@/ui/components';
+import { Text } from '@/ui/Text';
 import { colors } from '@/ui/theme';
 import { attempt, useRefresh } from '@/ui/useGame';
+import { showDialog } from '@/ui/dialog';
 
 export default function TeamScreen() {
   const { teamId } = useLocalSearchParams<{ teamId: string }>();
@@ -44,7 +46,7 @@ export default function TeamScreen() {
   };
 
   const confirmDeleteTeam = () =>
-    Alert.alert('チームを削除', `「${team.name}」と選手マスタを削除します。過去の試合記録は残ります。`, [
+    showDialog('チームを削除', `「${team.name}」と選手マスタを削除します。過去の試合記録は残ります。`, [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '削除',
@@ -90,7 +92,7 @@ export default function TeamScreen() {
             variant="ghost"
             small
             onPress={() =>
-              Alert.alert('選手を削除', `#${p.number} ${p.name} を選手マスタから削除します。`, [
+              showDialog('選手を削除', `#${p.number} ${p.name} を選手マスタから削除します。`, [
                 { text: 'キャンセル', style: 'cancel' },
                 { text: '削除', style: 'destructive', onPress: () => run(() => deletePlayer(db, p.id)) },
               ])

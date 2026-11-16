@@ -11,6 +11,7 @@ import {
   remainingTimeouts,
   type AfterPeriod,
 } from '@/domain/rules';
+import type { FixStat } from '@/domain/analysis';
 import type { EventType, FoulKind, GameEvent, RosterEntry, Score, Side } from '@/domain/types';
 import { ON_COURT_MAX, onCourtIds, periodSeconds } from '@/domain/lineup';
 import { ulid } from '@/lib/ulid';
@@ -139,7 +140,8 @@ export interface GameSummary {
   score: Score;
 }
 
-function today(): string {
+/** 端末の日付（YYYY-MM-DD） */
+export function todayString(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -150,7 +152,7 @@ export function createGame(db: Db): Game {
   const own = ensureOwnTeam(db);
   const game: Game = {
     id: ulid(),
-    date: today(),
+    date: todayString(),
     leagueName: '',
     venue: '',
     ownSide: 'A',
@@ -394,11 +396,21 @@ export function toggleCaptain(db: Db, id: string): void {
 }
 
 /** 保存済みチームの有効な選手を、その側の出場登録に読み込む（記録のない登録は置き換える） */
-export function loadRosterFromTeam(db: Db, gameId: string, side: Side, teamId: string): void {
+/**
+ * 保存済みチームから出場登録を読み込む。
+ * playerIds を渡すと、その選手（今日来ている選手）だけを読み込む。
+ */
+export function loadRosterFromTeam(
+  db: Db,
+  gameId: string,
+  side: Side,
+  teamId: string,
+  playerIds?: readonly string[],
+): void {
   const team = getTeam(db, teamId);
   if (!team) return;
   const source = listPlayers(db, teamId)
-    .filter((p) => p.isActive)
+    .filter((p) => p.isActive && (!playerIds || playerIds.includes(p.id)))
     .slice(0, RULES.maxRosterSize);
   db.transaction((tx) => {
     const usedIds = tx
@@ -627,6 +639,67 @@ export function replaceEvent(
   });
 }
 
+/**
+ * 選手別の修正表からの増減（得点の成功数・ファウル数を1件ずつ直す）。
+ * +1 はそのピリオドの最後の記録の直後に入れる（ランニングスコアの並びを崩さないよう、
+ * 同じ order_key を使い作成時刻で後ろに並べる）。ファウルは P・FT0 で記録する。
+ * -1 はその選手・ピリオド・項目の最後の1件をvoidする。
+ */
+export function adjustStat(
+  db: Db,
+  input: { gameId: string; period: number; side: Side; rosterId: string; type: FixStat; delta: 1 | -1 },
+): void {
+  db.transaction((tx) => {
+    const inPeriod = and(
+      eq(gameEvents.gameId, input.gameId),
+      eq(gameEvents.period, input.period),
+      isNull(gameEvents.voidedAt),
+    );
+    if (input.delta === -1) {
+      const target = tx
+        .select()
+        .from(gameEvents)
+        .where(and(inPeriod, eq(gameEvents.rosterId, input.rosterId), eq(gameEvents.type, input.type)))
+        .orderBy(desc(gameEvents.orderKey), desc(gameEvents.createdAt), desc(gameEvents.id))
+        .get();
+      if (!target) throw new RepoError('このQには、減らせる記録がありません');
+      tx.update(gameEvents).set({ voidedAt: Date.now() }).where(eq(gameEvents.id, target.id)).run();
+      return;
+    }
+    const last = tx
+      .select()
+      .from(gameEvents)
+      .where(and(inPeriod, notInArray(gameEvents.type, ['PERIOD_END', 'L2M'])))
+      .orderBy(desc(gameEvents.orderKey), desc(gameEvents.createdAt), desc(gameEvents.id))
+      .get();
+    let orderKey: number;
+    if (last) {
+      orderKey = last.orderKey;
+    } else {
+      // 記録が1件も無いピリオド。Q終了の印があればその直前、無ければ末尾に置く
+      const marker = activeMarkers(tx, input.gameId, 'PERIOD_END', input.period)[0];
+      orderKey = marker ? marker.orderKey - 0.5 : nextOrderKey(tx, input.gameId);
+    }
+    const event: GameEvent = {
+      id: ulid(),
+      gameId: input.gameId,
+      orderKey,
+      period: input.period,
+      side: input.side,
+      rosterId: input.rosterId,
+      type: input.type,
+      foulKind: input.type === 'FOUL' ? 'P' : null,
+      ftAwarded: input.type === 'FOUL' ? 0 : null,
+      clockSeconds: null,
+      // 同じ order_key の記録より必ず後ろに並ぶようにする
+      createdAt: Math.max(Date.now(), (last?.createdAt ?? 0) + 1),
+      voidedAt: null,
+      replacesEventId: null,
+    };
+    tx.insert(gameEvents).values(event).run();
+  });
+}
+
 /** UNDO：そのピリオドの直前の有効イベントをvoidする（Q終了・残り2分マーカーは対象外） */
 export function undoLastEvent(db: Db, gameId: string, period: number): GameEvent | null {
   return db.transaction((tx) => {
@@ -839,7 +912,17 @@ export function recordMismatch(db: Db, gameId: string, period: number, note = ''
  * 照合一致。period_checks に記録して次へ進める。
  * 第4Q以降は同点なら延長、それ以外は試合終了（status=finished）。
  */
-export function confirmPeriod(db: Db, gameId: string, period: number, note = ''): AfterPeriod {
+/**
+ * 照合を「一致」で確定し、次へ進む。
+ * endTied を付けると、第4Q以降が同点でも延長に入らず試合終了にする（引き分けのある大会・練習試合用）。
+ */
+export function confirmPeriod(
+  db: Db,
+  gameId: string,
+  period: number,
+  note = '',
+  options: { endTied?: boolean } = {},
+): AfterPeriod {
   return db.transaction((tx) => {
     const game = tx.select().from(games).where(eq(games.id, gameId)).get();
     if (!game) throw new RepoError('試合が見つかりません');
@@ -847,7 +930,8 @@ export function confirmPeriod(db: Db, gameId: string, period: number, note = '')
       insertMarker(tx, gameId, 'PERIOD_END', period);
     }
     const score = writeCheck(tx, gameId, period, true, note);
-    const outcome = afterPeriod(period, score);
+    const next = afterPeriod(period, score);
+    const outcome = next === 'overtime' && options.endTied ? 'finished' : next;
     if (game.status === 'live' && game.currentPeriod === period) {
       if (outcome === 'finished') {
         tx.update(games)

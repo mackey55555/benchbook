@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import { WebView } from 'react-native-webview';
 
@@ -16,8 +16,11 @@ import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Button, Card, Chip, Row, Segmented } from '@/ui/components';
 import { EventLogSheet } from '@/ui/EventLogSheet';
-import { colors, sideColor } from '@/ui/theme';
+import { QuickFixSheet } from '@/ui/QuickFixSheet';
+import { Text } from '@/ui/Text';
+import { colors, fonts, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
+import { showDialog } from '@/ui/dialog';
 
 type Tab = 'running' | 'box' | 'plays' | 'periods';
 
@@ -47,6 +50,7 @@ export default function GameDetailScreen() {
   const [boxSide, setBoxSide] = useState<Side>('A');
   const [periodFilter, setPeriodFilter] = useState<number | 'all'>('all');
   const [logOpen, setLogOpen] = useState(false);
+  const [fixOpen, setFixOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const sheetRef = useRef<ComponentRef<typeof View>>(null);
   const promptedRef = useRef(false);
@@ -62,7 +66,7 @@ export default function GameDetailScreen() {
     try {
       await action();
     } catch (e) {
-      Alert.alert('共有できませんでした', e instanceof Error ? e.message : String(e));
+      showDialog('共有できませんでした', e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -73,7 +77,7 @@ export default function GameDetailScreen() {
   useEffect(() => {
     if (finished !== '1' || promptedRef.current || !bundle) return;
     promptedRef.current = true;
-    Alert.alert('試合終了', 'お疲れさまでした。バックアップ（JSON）を書き出しますか？', [
+    showDialog('試合終了', 'お疲れさまでした。バックアップ（JSON）を書き出しますか？', [
       { text: 'あとで', style: 'cancel' },
       { text: '書き出す', onPress: () => void shareBackup() },
     ]);
@@ -263,7 +267,7 @@ export default function GameDetailScreen() {
   };
 
   const confirmDelete = () =>
-    Alert.alert('試合を削除', 'この試合の記録をすべて削除します。元に戻せません。', [
+    showDialog('試合を削除', 'この試合の記録をすべて削除します。元に戻せません。', [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '削除',
@@ -276,7 +280,7 @@ export default function GameDetailScreen() {
     ]);
 
   const confirmReopen = () =>
-    Alert.alert('試合を再開', `${periodLabel(game.currentPeriod)} の入力に戻ります。`, [
+    showDialog('試合を再開', `${periodLabel(game.currentPeriod)} の入力に戻ります。`, [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '再開する',
@@ -304,6 +308,9 @@ export default function GameDetailScreen() {
             {game.teamBName || 'B'}
           </Text>
         </Row>
+        {game.status !== 'prep' && (
+          <Button title="得点・ファウルを直す" variant="secondary" small onPress={() => setFixOpen(true)} />
+        )}
       </View>
 
       <Segmented
@@ -328,6 +335,18 @@ export default function GameDetailScreen() {
         <Button title="この試合を削除" variant="ghost" small onPress={confirmDelete} />
       </View>
 
+      <QuickFixSheet
+        visible={fixOpen}
+        bundle={bundle}
+        period={filterPeriod ?? 1}
+        choosePeriod
+        onClose={() => setFixOpen(false)}
+        onChanged={reload}
+        onOpenLog={() => {
+          setFixOpen(false);
+          setLogOpen(true);
+        }}
+      />
       <EventLogSheet
         visible={logOpen}
         bundle={bundle}
@@ -341,11 +360,11 @@ export default function GameDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 12, gap: 10, paddingBottom: 60 },
-  header: { alignItems: 'center', gap: 2 },
+  header: { alignItems: 'center', gap: 6 },
   meta: { fontSize: 12, color: colors.sub },
   scoreRow: { gap: 10 },
   teamName: { flex: 1, fontSize: 15, fontWeight: '700', textAlign: 'center' },
-  score: { fontSize: 32, fontWeight: '900', color: colors.text, fontVariant: ['tabular-nums'] },
+  score: { fontSize: 44, lineHeight: 46, fontFamily: fonts.num, color: colors.text },
   tabBody: { gap: 10 },
   filters: { flexGrow: 0 },
   sheet: { backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line },

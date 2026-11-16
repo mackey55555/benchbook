@@ -38,9 +38,19 @@
 - `src/domain/` は単体テスト必須。CP1・CP2はテストを先に書いてから実装する
 - ルール（SPEC 3章）を変更したら、対応するテストを必ず追加・更新する
 
+## デザイン
+
+- 色・フォント・角丸は `src/ui/theme.ts` から取る。画面に色の値を直接書かない
+- 文字は `@/ui/Text` の `Text` を使う（react-native の `Text` を直接使わない）。数字（得点・背番号・時計）は `num` を付ける
+- オレンジ（`accent`）は画面でいちばん押してほしいボタンにだけ使い、上に載せる文字は濃紺。白文字は載せない
+- 確認・通知はOS標準のアラート（`Alert.alert`）を使わず、`@/ui/dialog` の `showDialog` を使う（iOSではアラートで画面が縦に回転するため）。Modal の中身の最後には `<DialogHost />` を置く
+- アイコン・スプラッシュ（`assets/`、`app.config.ts`）の変更はOTAで配れない
+- グラフは [src/ui/charts.tsx](src/ui/charts.tsx) の部品（View で描画。SVGライブラリは未導入）を使い、系列色は `colors.chartOwn`（自チーム）と `colors.chartOpp`（相手）に固定する
+- 縦画面のタブ（`src/app/(tabs)/`）はヘッダーなし。画面上部の余白は `useSafeAreaInsets` で自前に取る
+
 ## OTA
 
-- `checkAutomatically: NEVER`。更新の確認は、進行中の試合がないときのホーム画面でのみ行う
+- `checkAutomatically: NEVER`。更新の確認は、進行中の試合がないときのホーム画面でのみ行う（自動。取得後は「更新する」の案内を出す）
 - ネイティブ依存を追加する変更はOTAで配れない。PRの説明に「要再ビルド」と明記する
 
 ## やらないこと

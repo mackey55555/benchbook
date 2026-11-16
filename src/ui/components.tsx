@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react';
 import {
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   View,
   type StyleProp,
@@ -10,9 +9,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { colors } from './theme';
+import { Text } from './Text';
+import { colors, fonts, radius } from './theme';
 
-type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
+/** accent は画面でいちばん押してほしいボタンにだけ使う */
+type Variant = 'primary' | 'accent' | 'secondary' | 'danger' | 'dangerSoft' | 'ghost';
 
 export function Button(props: {
   title: string;
@@ -27,16 +28,24 @@ export function Button(props: {
     ? colors.disabledBg
     : variant === 'primary'
       ? colors.primary
-      : variant === 'danger'
+      : variant === 'accent'
+        ? colors.accent
+        : variant === 'danger'
         ? colors.danger
-        : variant === 'secondary'
-          ? colors.card
+        : variant === 'dangerSoft'
+          ? colors.dangerBg
+          : variant === 'secondary'
+            ? colors.disabledBg
           : 'transparent';
   const fg = disabled
     ? colors.sub
     : variant === 'primary' || variant === 'danger'
       ? colors.primaryText
-      : colors.primary;
+      : variant === 'accent'
+        ? colors.accentText
+        : variant === 'dangerSoft'
+          ? colors.dangerInk
+          : colors.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -47,7 +56,6 @@ export function Button(props: {
         styles.button,
         small && styles.buttonSmall,
         { backgroundColor: bg },
-        variant === 'secondary' && styles.buttonBorder,
         pressed && styles.pressed,
         style,
       ]}
@@ -162,58 +170,56 @@ export function Row(props: { children: ReactNode; style?: StyleProp<ViewStyle> }
 
 export const styles = StyleSheet.create({
   button: {
-    minHeight: 48,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    minHeight: 52,
+    paddingHorizontal: 18,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonSmall: { minHeight: 36, paddingHorizontal: 12, borderRadius: 8 },
-  buttonBorder: { borderWidth: 1, borderColor: colors.line },
-  buttonText: { fontSize: 16, fontWeight: '600' },
+  buttonSmall: { minHeight: 40, paddingHorizontal: 14, borderRadius: radius.sm },
+  buttonText: { fontSize: 16, fontWeight: '800' },
   buttonTextSmall: { fontSize: 14 },
   pressed: { opacity: 0.6 },
   card: {
     backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: radius.lg,
+    padding: 16,
     gap: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
   },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.sub, marginTop: 6 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', color: colors.text, marginTop: 8 },
   input: {
-    minHeight: 44,
-    borderWidth: 1,
+    minHeight: 48,
+    borderWidth: 1.5,
     borderColor: colors.line,
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
     fontSize: 16,
+    fontFamily: fonts.medium,
     color: colors.text,
     backgroundColor: colors.card,
   },
   segmented: {
     flexDirection: 'row',
     backgroundColor: colors.disabledBg,
-    borderRadius: 9,
-    padding: 2,
+    borderRadius: radius.md,
+    padding: 3,
   },
-  segment: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 7 },
+  segment: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 11 },
   segmentActive: { backgroundColor: colors.card },
-  segmentText: { fontSize: 14, color: colors.sub, fontWeight: '600' },
-  segmentTextActive: { color: colors.text },
+  segmentText: { fontSize: 14, color: colors.sub, fontWeight: '700' },
+  segmentTextActive: { color: colors.text, fontWeight: '800' },
   chip: {
     minWidth: 44,
     minHeight: 40,
     paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
     borderColor: colors.line,
     backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chipDisabled: { backgroundColor: colors.disabledBg },
-  chipText: { fontSize: 15, fontWeight: '600', color: colors.text },
+  chipDisabled: { backgroundColor: colors.disabledBg, borderColor: colors.disabledBg },
+  chipText: { fontSize: 15, fontWeight: '700', color: colors.text },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });
