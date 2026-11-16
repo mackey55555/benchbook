@@ -73,14 +73,22 @@ Benchbook は、バスケットボールのベンチで「控えのスコア」�
 
 ## スクリーンショット
 
-[images/](images/) にある。6.7インチ（1290×2796）用で、01〜06 の順に登録する。
+[images/](images/) にある。6.3インチ（1206×2622）用で、01〜06 の順に登録する。
 
 - `01-hero.png`〜`06-offline.png`：App Store 掲載用
 - `ogp.png`（1200×630）：サイト・SNSのリンク用
 - `square.png`（1080×1080）：SNS投稿用
+- `header-3840x1646.png`：プロダクトページの「ヘッダ」用
+- `search-3840x2560.png`：プロダクトページの「検索結果」用
 
 画面はAndroidエミュレータで撮影し、上部のステータスバーをiPhone風に描き直している。数値はデモ用のデータ。
 
 ## 審査メモ（審査担当者向け、英語）
 
 This app works fully offline and requires no account. To try it: tap "新規試合" (New game) on the home screen, add a few jersey numbers for each team, then tap "試合開始" (Start). The live input screen is landscape-only by design.
+
+## 提出の記録
+
+- App Store Connect のアプリID：6835338670（公開後のURLは https://apps.apple.com/jp/app/id6835338670 ）
+- 本番ビルドは `eas build --profile production --platform ios`、提出は `eas submit --platform ios --latest`
+- 本番ビルドへのOTAは、配信先を `production` にして出す（確認用ビルドは `preview`）
