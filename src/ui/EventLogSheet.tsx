@@ -1,9 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
-import { replaceEvent, voidEvent, type GameBundle } from '@/db/repo';
+import { TEAM_EVENT_TYPES, replaceEvent, voidEvent, type GameBundle } from '@/db/repo';
 import { activeEvents, compareNumbers, periodLabel } from '@/domain/rules';
 import { EVENT_LABELS, describeEvent } from '@/domain/stats';
 import {
@@ -42,7 +43,7 @@ export const DEFAULT_FT: Record<FoulKind, number> = { P: 0, T: 1, U: 2, D: 2, C:
 
 interface Draft {
   side: Side;
-  /** undefined = 未選択、null = ベンチ */
+  /** undefined = 未選択、null = チーム（TOV・リバウンド）／ベンチ（ファウル） */
   rosterId: string | null | undefined;
   type: EventType;
   foulKind: FoulKind;
@@ -136,9 +137,9 @@ export function EventLogSheet(props: {
       .sort((a, b) => compareNumbers(a.number, b.number));
     const update = (patch: Partial<Draft>) => {
       const next = { ...draft, ...patch };
-      // ベンチはファウル（C/B）だけ、選手はP/T/U/Dだけ
+      // チーム・ベンチで記録できるのは、チームのTOV・リバウンドと、ベンチのファウル（C/B）だけ
       if (next.rosterId === null) {
-        next.type = 'FOUL';
+        if (next.type !== 'FOUL' && !TEAM_EVENT_TYPES.includes(next.type)) next.type = 'FOUL';
         if (next.foulKind !== 'C' && next.foulKind !== 'B') {
           next.foulKind = 'C';
           next.ftAwarded = DEFAULT_FT.C;
@@ -175,7 +176,7 @@ export function EventLogSheet(props: {
             />
           ))}
           <Chip
-            label="ベンチ"
+            label="チーム・ベンチ"
             active={isBench}
             color={sideColor(draft.side)}
             onPress={() => update({ rosterId: null })}
@@ -188,7 +189,7 @@ export function EventLogSheet(props: {
               key={t}
               label={EVENT_LABELS[t]}
               active={draft.type === t}
-              disabled={isBench && t !== 'FOUL'}
+              disabled={isBench && t !== 'FOUL' && !TEAM_EVENT_TYPES.includes(t)}
               onPress={() => update({ type: t })}
             />
           ))}
@@ -261,6 +262,23 @@ export function EventLogSheet(props: {
                     <Text key={e.id} style={styles.divider}>
                       ── {periodLabel(e.period)} 終了 ──
                     </Text>
+                  ) : e.type === 'MARK' ? (
+                    <Row key={e.id} style={[styles.item, styles.mark]}>
+                      <Text style={styles.period}>{periodLabel(e.period)}</Text>
+                      <Ionicons name="flag" size={16} color={colors.accentText} />
+                      <Text style={[styles.desc, styles.markText]} numberOfLines={1}>
+                        {describeEvent(e, bundle.roster)}
+                      </Text>
+                      <Button
+                        title="印を外す"
+                        variant="ghost"
+                        small
+                        onPress={() => {
+                          voidEvent(db, e.id);
+                          onChanged();
+                        }}
+                      />
+                    </Row>
                   ) : (
                     <Row key={e.id} style={styles.item}>
                       <Text style={styles.period}>{periodLabel(e.period)}</Text>
@@ -304,6 +322,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,
   },
+  // 「要確認」の印。前後の記録を見直す目印なので、ほかの行より目立たせる
+  mark: { backgroundColor: colors.accentBg, borderColor: colors.accent, borderWidth: 2, gap: 6 },
+  markText: { color: colors.accentText },
   period: { width: 36, fontSize: 12, color: colors.sub, fontWeight: '700' },
   desc: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
   editor: { paddingHorizontal: 16, paddingBottom: 24, gap: 8 },

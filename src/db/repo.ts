@@ -14,6 +14,7 @@ import {
 import type { FixStat } from '@/domain/analysis';
 import { PRACTICE_GAME_ID } from '@/domain/practice';
 import type { EventType, FoulKind, GameEvent, RosterEntry, Score, Side } from '@/domain/types';
+import { clockRemainingMs, isClockRunning } from '@/domain/clock';
 import { ON_COURT_MAX, onCourtIds, periodSeconds } from '@/domain/lineup';
 import { ulid } from '@/lib/ulid';
 
@@ -165,6 +166,9 @@ export function createGame(db: Db): Game {
     currentPeriod: 1,
     createdAt: Date.now(),
     finishedAt: null,
+    clockPeriod: null,
+    clockRemainingMs: null,
+    clockStartedAt: null,
   };
   const ownPlayers = listPlayers(db, own.id)
     .filter((p) => p.isActive)
@@ -209,6 +213,9 @@ export function createPracticeGame(db: Db): Game {
     currentPeriod: 1,
     createdAt: Date.now(),
     finishedAt: null,
+    clockPeriod: null,
+    clockRemainingMs: null,
+    clockStartedAt: null,
   };
   db.transaction((tx) => {
     tx.insert(games).values(game).run();
@@ -587,7 +594,23 @@ export interface NewEvent {
   type: EventType;
   foulKind?: FoulKind | null;
   ftAwarded?: number | null;
+  /** そのピリオドの残り時間（秒）。時計を使っているときだけ渡す */
+  clockSeconds?: number | null;
 }
+
+/** 選手を選ばずに「チーム」として記録できる項目（24秒などのチームのTO、チームリバウンド） */
+export const TEAM_EVENT_TYPES: readonly EventType[] = ['TOV', 'OREB', 'DREB'];
+const PLAYER_ONLY_TYPES: readonly EventType[] = [
+  'FG2_MADE',
+  'FG2_MISS',
+  'FG3_MADE',
+  'FG3_MISS',
+  'FT_MADE',
+  'FT_MISS',
+  'AST',
+  'STL',
+  'BLK',
+];
 
 function nextOrderKey(db: Db, gameId: string): number {
   const row = db
@@ -599,6 +622,9 @@ function nextOrderKey(db: Db, gameId: string): number {
 }
 
 function normalizeEvent(input: NewEvent): Pick<GameEvent, 'foulKind' | 'ftAwarded'> {
+  if (input.rosterId === null && PLAYER_ONLY_TYPES.includes(input.type)) {
+    throw new RepoError('この記録は選手を選んでください（チームで記録できるのは TOV・OR・DR です）');
+  }
   if (input.type !== 'FOUL') return { foulKind: null, ftAwarded: null };
   const kind = input.foulKind ?? 'P';
   const isBench = kind === 'C' || kind === 'B';
@@ -636,7 +662,7 @@ export function addEvent(db: Db, input: NewEvent): GameEvent {
       rosterId: input.rosterId,
       type: input.type,
       ...attrs,
-      clockSeconds: null,
+      clockSeconds: input.clockSeconds ?? null,
       createdAt: Date.now(),
       voidedAt: null,
       replacesEventId: null,
@@ -644,6 +670,93 @@ export function addEvent(db: Db, input: NewEvent): GameEvent {
     tx.insert(gameEvents).values(event).run();
     return event;
   });
+}
+
+/**
+ * 印を付ける。「今の何番だった？」というときに押しておき、あとでログから前後を見直す。
+ * 集計には影響しない。直前の記録が印なら、その印を外す（押し間違いを同じボタンで戻せる）。
+ * 付けたら true、外したら false を返す。
+ */
+export function toggleMark(db: Db, input: { gameId: string; period: number; clockSeconds?: number | null }): boolean {
+  return db.transaction((tx) => {
+    const last = tx
+      .select()
+      .from(gameEvents)
+      .where(and(eq(gameEvents.gameId, input.gameId), isNull(gameEvents.voidedAt)))
+      .orderBy(desc(gameEvents.orderKey), desc(gameEvents.createdAt))
+      .get();
+    if (last?.type === 'MARK' && last.period === input.period) {
+      tx.update(gameEvents).set({ voidedAt: Date.now() }).where(eq(gameEvents.id, last.id)).run();
+      return false;
+    }
+    tx.insert(gameEvents)
+      .values({
+        id: ulid(),
+        gameId: input.gameId,
+        orderKey: nextOrderKey(tx, input.gameId),
+        period: input.period,
+        side: null,
+        rosterId: null,
+        type: 'MARK',
+        foulKind: null,
+        ftAwarded: null,
+        clockSeconds: input.clockSeconds ?? null,
+        createdAt: Date.now(),
+        voidedAt: null,
+        replacesEventId: null,
+      })
+      .run();
+    return true;
+  });
+}
+
+// ----------------------------------------------------------------- clock
+
+/** 時計を動かす。そのピリオドで初めてなら、ピリオドの長さから始める。残り0なら動かさない */
+export function startClock(db: Db, gameId: string, now = Date.now()): void {
+  const game = getGame(db, gameId);
+  if (!game) throw new RepoError('試合が見つかりません');
+  const period = game.currentPeriod;
+  if (isClockRunning(game, period)) return;
+  const remaining = clockRemainingMs(game, period, game, now);
+  if (remaining <= 0) return;
+  db.update(games)
+    .set({ clockPeriod: period, clockRemainingMs: remaining, clockStartedAt: now })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+/** 時計を止める。動いていなければ何もしない */
+export function stopClock(db: Db, gameId: string, now = Date.now()): void {
+  const game = getGame(db, gameId);
+  if (!game || !isClockRunning(game, game.currentPeriod)) return;
+  db.update(games)
+    .set({ clockRemainingMs: clockRemainingMs(game, game.currentPeriod, game, now), clockStartedAt: null })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+/** 残り時間を直す（会場の時計に合わせる）。動いていれば、直した時間からそのまま動き続ける */
+export function setClock(db: Db, gameId: string, seconds: number, now = Date.now()): void {
+  const game = getGame(db, gameId);
+  if (!game) throw new RepoError('試合が見つかりません');
+  const period = game.currentPeriod;
+  if (!Number.isInteger(seconds) || seconds < 0 || seconds > periodSeconds(period, game)) {
+    throw new RepoError('残り時間が正しくありません');
+  }
+  const running = isClockRunning(game, period) && seconds > 0;
+  db.update(games)
+    .set({ clockPeriod: period, clockRemainingMs: seconds * 1000, clockStartedAt: running ? now : null })
+    .where(eq(games.id, gameId))
+    .run();
+}
+
+/** 時計を使わない状態に戻す（表示はピリオドの長さに戻り、記録に時刻が付かなくなる） */
+export function resetClock(db: Db, gameId: string): void {
+  db.update(games)
+    .set({ clockPeriod: null, clockRemainingMs: null, clockStartedAt: null })
+    .where(eq(games.id, gameId))
+    .run();
 }
 
 /** 取消。物理削除せず voided_at を立てる */
@@ -755,7 +868,7 @@ export function adjustStat(
   });
 }
 
-/** UNDO：そのピリオドの直前の有効イベントをvoidする（Q終了・残り2分マーカーは対象外） */
+/** UNDO：そのピリオドの直前の有効イベントをvoidする（Q終了・残り2分マーカー・印は対象外） */
 export function undoLastEvent(db: Db, gameId: string, period: number): GameEvent | null {
   return db.transaction((tx) => {
     const last = tx
@@ -766,7 +879,7 @@ export function undoLastEvent(db: Db, gameId: string, period: number): GameEvent
           eq(gameEvents.gameId, gameId),
           eq(gameEvents.period, period),
           isNull(gameEvents.voidedAt),
-          notInArray(gameEvents.type, ['PERIOD_END', 'L2M']),
+          notInArray(gameEvents.type, ['PERIOD_END', 'L2M', 'MARK']),
         ),
       )
       .orderBy(desc(gameEvents.orderKey), desc(gameEvents.createdAt))
@@ -911,6 +1024,7 @@ export function setLastTwoMinutes(db: Db, gameId: string, on: boolean): void {
 }
 
 export function endPeriod(db: Db, gameId: string, period: number): void {
+  stopClock(db, gameId);
   db.transaction((tx) => {
     if (activeMarkers(tx, gameId, 'PERIOD_END', period).length === 0) {
       insertMarker(tx, gameId, 'PERIOD_END', period);
