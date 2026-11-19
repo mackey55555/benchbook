@@ -72,7 +72,7 @@ function teamTable(
     })
     .join('');
   const empty = Array.from(
-    { length: Math.max(0, RULES.maxRosterSize - team.players.length) },
+    { length: Math.max(0, RULES.standardRosterSize - team.players.length) },
     () => `<tr>${'<td></td>'.repeat(23)}</tr>`,
   ).join('');
   const t = team.total;

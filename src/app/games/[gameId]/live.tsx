@@ -431,7 +431,9 @@ export default function LiveScreen() {
     const team: TeamState = state[side];
     const benchActive = selected?.side === side && selected.rosterId === BENCH;
     const players = team.players.slice(0, RULES.maxRosterSize).map((p) => playerButton(side, p));
-    const rows = Array.from({ length: Math.ceil(RULES.maxRosterSize / GRID_COLUMNS) }, (_, r) =>
+    // 12名までは今までどおり4段。13名以上のときだけ段を足す（ボタンは少し低くなる）
+    const slots = Math.max(RULES.standardRosterSize, players.length);
+    const rows = Array.from({ length: Math.ceil(slots / GRID_COLUMNS) }, (_, r) =>
       players.slice(r * GRID_COLUMNS, (r + 1) * GRID_COLUMNS),
     );
     const benchFouls = team.coach.C + team.coach.B;
