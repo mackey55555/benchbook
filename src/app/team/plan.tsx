@@ -103,7 +103,11 @@ export default function PlanScreen() {
     run(async () => {
       await purchase(userId, selected);
       if (await awaitSubscription(selected)) {
-        showDialog('契約しました', '運営しているチームに、契約の枠を割り当てました。割り当ては、各チームの画面で入れ替えられます。');
+        if (subscribed) {
+          showDialog('契約を変更しました', `${tier}チームまで使えます。どのチームで使うかは、各チームの画面で入れ替えられます。`);
+        } else {
+          showDialog('契約しました', '運営しているチームに、契約の枠を割り当てました。割り当ては、各チームの画面で入れ替えられます。');
+        }
       } else if (subscribed) {
         showDialog('変更を受け付けました', 'チーム数を減らす変更などは、次の更新日から切り替わります。');
       } else {
