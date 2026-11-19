@@ -156,7 +156,7 @@ function teamPanel(input: RunningScoreInput, side: Side): string {
     })
     .join('');
   const emptyRows = Array.from(
-    { length: Math.max(0, RULES.maxRosterSize - box.players.length) },
+    { length: Math.max(0, RULES.standardRosterSize - box.players.length) },
     () =>
       `<tr><td class="pn"></td><td class="pname"></td>${'<td class="f"></td>'.repeat(RULES.foulOutAt)}<td class="pts"></td></tr>`,
   ).join('');
@@ -242,11 +242,17 @@ table { border-collapse: collapse; }
 export function buildRunningScoreHtml(input: RunningScoreInput): string {
   const { game, events } = input;
   const total = computeScore(events);
+  // 出場登録が標準（12名）を超えるときは、選手の行を低くして、1ページに収める
+  const rosterRows = Math.max(...(['A', 'B'] as const).map((side) => input.roster.filter((r) => r.side === side).length));
+  const compact =
+    rosterRows > RULES.standardRosterSize
+      ? `.players td { height: ${((4.1 * RULES.standardRosterSize) / rosterRows).toFixed(2)}mm; font-size: 6.5pt; }`
+      : '';
   return `<!DOCTYPE html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=794, user-scalable=yes">
 <title>${esc(game.teamAName)} vs ${esc(game.teamBName)}</title>
-<style>${CSS}</style></head>
+<style>${CSS}${compact}</style></head>
 <body><div class="sheet">
 <div class="head">
 <div><h1>ランニングスコア（ベンチ控え）</h1>
