@@ -201,6 +201,12 @@ export async function signInWithApple(): Promise<void> {
   if (!credential.identityToken) throw new Error('Appleから本人確認の結果を受け取れませんでした');
   const { data, error } = await client().auth.signInWithIdToken({ provider: 'apple', token: credential.identityToken });
   if (error) throw error;
+  // アカウントを削除するときに Apple 側の連携も解除できるよう、解除に使う鍵をサーバーに預ける（失敗しても続ける）
+  if (credential.authorizationCode) {
+    void client()
+      .functions.invoke('apple-account', { body: { action: 'store', code: credential.authorizationCode } })
+      .catch(() => undefined);
+  }
   const name = [credential.fullName?.familyName, credential.fullName?.givenName].filter(Boolean).join(' ');
   if (name && data.user) {
     await client().from('profiles').update({ display_name: name.slice(0, 40) }).eq('id', data.user.id).eq('display_name', '');
@@ -275,6 +281,10 @@ export async function signOut(): Promise<void> {
  * 端末にあるチームの内容も消す（個人の記録は残る）。
  */
 export async function deleteAccount(): Promise<void> {
+  // 「Appleでサインイン」の連携を、Apple 側でも解除する（できなくても、削除は進める）
+  await client()
+    .functions.invoke('apple-account', { body: { action: 'revoke' } })
+    .catch(() => undefined);
   const { error } = await client().rpc('delete_account');
   if (error) throw error;
   for (const space of listSpaces(db)) purgeSpace(db, space.id);
