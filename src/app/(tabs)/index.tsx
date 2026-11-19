@@ -8,11 +8,13 @@ import { db } from '@/db/client';
 import { createGame, createPracticeGame, deletePracticeGame, getLiveGame, listGames } from '@/db/repo';
 import { PRACTICE_GAME_ID } from '@/domain/practice';
 import { FLAG_WELCOMED, hasFlag, setFlag } from '@/lib/flags';
+import { switchSpace, useTeamState } from '@/sync/session';
 import { showDialog } from '@/ui/dialog';
 import { periodLabel } from '@/domain/rules';
 import { applyUpdate, checkForUpdate, useUpdateState } from '@/ui/appUpdate';
 import { Button, SectionTitle } from '@/ui/components';
 import { GameRow, useOpenGame } from '@/ui/GameRow';
+import { SpaceSwitcher } from '@/ui/SpaceSwitcher';
 import { Text } from '@/ui/Text';
 import { colors, radius } from '@/ui/theme';
 import { useRefresh } from '@/ui/useGame';
@@ -28,6 +30,8 @@ export default function HomeScreen() {
   const [version, refresh] = useRefresh();
   const update = useUpdateState();
   const openGame = useOpenGame();
+  const team = useTeamState();
+  const space = team.spaces.find((sp) => sp.id === team.spaceId);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- version で再読み込みする
   const games = useMemo(() => listGames(db), [version]);
@@ -95,6 +99,8 @@ export default function HomeScreen() {
         <Image source={require('../../../assets/mark.png')} style={styles.mark} accessibilityIgnoresInvertColors />
         <Text style={styles.wordmark}>Benchbook</Text>
       </View>
+
+      <SpaceSwitcher />
 
       {update.ready && (
         <View style={styles.update}>
@@ -176,7 +182,24 @@ export default function HomeScreen() {
           </Pressable>
         )}
       </View>
-      {games.length === 0 && (
+      {games.length === 0 && space && (
+        <View style={styles.welcome}>
+          <Text style={styles.welcomeTitle}>このチームには、まだ試合がありません</Text>
+          {space.active ? (
+            <>
+              <Text style={styles.welcomeBody}>
+                「新規試合」で記録を始めると、メンバー全員に届きます。個人で記録した試合は、チームへ送れます。「個人」に切り替えて、終了した試合を長押しし、「チームに送る」を選んでください。
+              </Text>
+              <Button title="個人に切り替える" variant="secondary" onPress={() => switchSpace(null)} />
+            </>
+          ) : (
+            <Text style={styles.welcomeBody}>
+              いまは契約がないため、自分が記録した試合だけを表示しています。
+            </Text>
+          )}
+        </View>
+      )}
+      {games.length === 0 && !space && (
         <View style={styles.welcome}>
           <Text style={styles.welcomeTitle}>はじめての方へ</Text>
           <Text style={styles.welcomeBody}>

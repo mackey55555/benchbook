@@ -28,7 +28,8 @@ import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
 import { colors, radius } from '@/ui/theme';
-import { useAnalysis } from '@/ui/useAnalysis';
+import { paywallEnabled } from '@/sync/client';
+import { FREE_ANALYSIS_GAMES, useAnalysis, useAnalysisLimit } from '@/ui/useAnalysis';
 
 /** 推移グラフに出す試合数（新しいほうから） */
 const TREND_GAMES = 10;
@@ -72,23 +73,26 @@ export default function AnalysisScreen() {
   const [sortKey, setSortKey] = useState('pts');
   const [shareOpen, setShareOpen] = useState(false);
   const analysis = useAnalysis(range);
+  const limit = useAnalysisLimit();
+  const router = useRouter();
+  const rangeLabel = limit.limited ? `直近${FREE_ANALYSIS_GAMES}試合` : DATE_RANGE_LABELS[range];
 
   // 共有用のシートは、いま見ている軸・期間・平均／合計・並び順で作る
   const shareHtml = useMemo(() => {
     if (!shareOpen) return '';
-    const options = { rangeLabel: DATE_RANGE_LABELS[range], mode };
+    const options = { rangeLabel, mode };
     return axis === 'team'
       ? buildTeamReportHtml(analysis, options)
       : buildPlayersReportHtml(analysis, { ...options, sortKey });
-  }, [shareOpen, axis, analysis, range, mode, sortKey]);
+  }, [shareOpen, axis, analysis, rangeLabel, mode, sortKey]);
   const [exporting, setExporting] = useState(false);
 
   // 期間の全内容（チーム成績・選手の比較表・選手1人ずつのまとめ）を1つのPDFにして共有する
   const exportAll = async () => {
     setExporting(true);
     try {
-      const html = buildFullReportHtml(analysis, { rangeLabel: DATE_RANGE_LABELS[range], mode, sortKey });
-      await sharePdf(html, `${analysis.teamName || 'benchbook'}_成績まとめ_${DATE_RANGE_LABELS[range]}`);
+      const html = buildFullReportHtml(analysis, { rangeLabel, mode, sortKey });
+      await sharePdf(html, `${analysis.teamName || 'benchbook'}_成績まとめ_${rangeLabel}`);
     } catch (e) {
       showDialog('出力できませんでした', e instanceof Error ? e.message : String(e));
     } finally {
@@ -97,13 +101,14 @@ export default function AnalysisScreen() {
   };
 
   const shareMenu = () =>
-    showDialog('共有', `期間：${DATE_RANGE_LABELS[range]}（${analysis.games}試合）`, [
+    showDialog('共有', `期間：${rangeLabel}（${analysis.games}試合）`, [
       { text: axis === 'team' ? 'チーム成績を共有' : '選手の比較表を共有', onPress: () => setShareOpen(true) },
-      { text: '全内容を1つのPDFで出力', onPress: () => void exportAll() },
+      // 全内容のまとめPDFは、チームプランの機能
+      ...(limit.limited ? [] : [{ text: '全内容を1つのPDFで出力', onPress: () => void exportAll() }]),
       { text: 'キャンセル', style: 'cancel' },
     ]);
 
-  const shareName = `${analysis.teamName || 'benchbook'}_${axis === 'team' ? 'チーム成績' : '選手成績'}_${DATE_RANGE_LABELS[range]}`;
+  const shareName = `${analysis.teamName || 'benchbook'}_${axis === 'team' ? 'チーム成績' : '選手成績'}_${rangeLabel}`;
 
   return (
     <ScrollView
@@ -123,23 +128,27 @@ export default function AnalysisScreen() {
         value={axis}
         onChange={setAxis}
       />
-      <Row>
-        <Text style={styles.label}>期間</Text>
-        {RANGES.map((r) => (
-          <Chip key={r} label={DATE_RANGE_LABELS[r]} active={range === r} onPress={() => setRange(r)} />
-        ))}
-      </Row>
+      {!limit.limited && (
+        <Row>
+          <Text style={styles.label}>期間</Text>
+          {RANGES.map((r) => (
+            <Chip key={r} label={DATE_RANGE_LABELS[r]} active={range === r} onPress={() => setRange(r)} />
+          ))}
+        </Row>
+      )}
 
       {analysis.games === 0 ? (
         <Text style={styles.empty}>
-          {range === 'all'
+          {range === 'all' || limit.limited
             ? '終了した試合がまだありません。試合を記録すると、ここに成績が出ます'
             : 'この期間に終了した試合がありません'}
         </Text>
       ) : (
         <>
           <Row>
-            <Text style={styles.count}>{analysis.games}試合の成績</Text>
+            <Text style={styles.count}>
+              {limit.limited ? `直近${analysis.games}試合の成績` : `${analysis.games}試合の成績`}
+            </Text>
             <View style={styles.flex} />
             <Segmented
               options={axis === 'players' ? PLAYER_MODES : MODES}
@@ -151,14 +160,36 @@ export default function AnalysisScreen() {
           {axis === 'team' ? (
             <TeamView key={range} analysis={analysis} mode={teamMode} />
           ) : (
-            <PlayersView analysis={analysis} mode={mode} range={range} sortKey={sortKey} onSort={setSortKey} />
+            <PlayersView
+              analysis={analysis}
+              mode={mode}
+              range={range}
+              sortKey={sortKey}
+              onSort={setSortKey}
+              locked={limit.limited}
+            />
           )}
-          <View style={styles.notice}>
-            <Text style={styles.noticeTitle}>分析は、いまはすべて無料で使えます</Text>
-            <Text style={styles.noticeBody}>
-              今後チームプラン（有料）を始めたあとは、無料で見られる分析は直近3試合までになる予定です。試合の記録と、試合ごとのスコアシートの共有は、その後も無料で使えます。
-            </Text>
-          </View>
+          {limit.limited ? (
+            <View style={styles.notice}>
+              <Text style={styles.noticeTitle}>
+                無料で見られるのは、直近{FREE_ANALYSIS_GAMES}試合の分析です
+                {limit.totalGames > FREE_ANALYSIS_GAMES ? `（記録は${limit.totalGames}試合あります）` : ''}
+              </Text>
+              <Text style={styles.noticeBody}>
+                チームプランでは、シーズンを通した分析、選手ごとのページ、全内容のまとめPDFが使えて、メンバー全員が同じ成績を見られます。試合の記録と、試合ごとのスコアシートの共有は、無料のまま使えます。
+              </Text>
+              <Button title="チームプランを見る" small onPress={() => router.push('/team')} />
+            </View>
+          ) : (
+            !paywallEnabled && (
+              <View style={styles.notice}>
+                <Text style={styles.noticeTitle}>分析は、いまはすべて無料で使えます</Text>
+                <Text style={styles.noticeBody}>
+                  今後チームプラン（有料）を始めたあとは、無料で見られる分析は直近3試合までになる予定です。試合の記録と、試合ごとのスコアシートの共有は、その後も無料で使えます。
+                </Text>
+              </View>
+            )
+          )}
         </>
       )}
       <ShareSheet visible={shareOpen} html={shareHtml} name={shareName} onClose={() => setShareOpen(false)} />
@@ -381,8 +412,10 @@ function PlayersView(props: {
   range: DateRange;
   sortKey: string;
   onSort: (key: string) => void;
+  /** 無料の範囲のとき。選手ごとのページは開かない */
+  locked: boolean;
 }) {
-  const { analysis, mode, range, sortKey, onSort } = props;
+  const { analysis, mode, range, sortKey, onSort, locked } = props;
   const router = useRouter();
   const sortCol = statColumn(sortKey);
   // 値の大きい順。成功率が出せない選手（試投なし）は最後に回す
@@ -392,7 +425,8 @@ function PlayersView(props: {
   return (
     <>
       <Text style={styles.cardNote}>
-        見出しをタップすると、その項目の多い順に並びます。選手をタップすると詳細を開きます
+        見出しをタップすると、その項目の多い順に並びます。
+        {locked ? '選手ごとのページは、チームプランで使えます' : '選手をタップすると詳細を開きます'}
       </Text>
       <StatTable
         rows={players.map((p) => ({
@@ -417,7 +451,14 @@ function PlayersView(props: {
         leadLabel="試合"
         sortKey={sortKey}
         onSort={onSort}
-        onPressRow={(key) => router.push({ pathname: '/players/[key]', params: { key, range } })}
+        onPressRow={(key) =>
+          locked
+            ? showDialog('選手ごとのページ', '試合ごとの推移や成功率をまとめた選手のページは、チームプランで使えます。', [
+                { text: '閉じる', style: 'cancel' },
+                { text: 'チームプランを見る', onPress: () => router.push('/team') },
+              ])
+            : router.push({ pathname: '/players/[key]', params: { key, range } })
+        }
       />
       <Text style={styles.cardNote}>
         試合数は、出場登録された試合の数です。MIN（出場時間）と +/- は、先発と交代を記録した試合の分だけを集計します

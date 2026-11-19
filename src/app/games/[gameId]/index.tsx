@@ -22,7 +22,9 @@ import { QuickFixSheet } from '@/ui/QuickFixSheet';
 import { Text } from '@/ui/Text';
 import { colors, fonts, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
+import { useSendToTeam } from '@/ui/useSendToTeam';
 import { showDialog } from '@/ui/dialog';
+import { useTeamState } from '@/sync/session';
 
 type Tab = 'running' | 'box' | 'flow' | 'plays' | 'periods';
 
@@ -49,6 +51,8 @@ export default function GameDetailScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { bundle, reload } = useGame(gameId);
+  const team = useTeamState();
+  const sender = useSendToTeam();
   const [tab, setTab] = useState<Tab>('running');
   const [boxSide, setBoxSide] = useState<Side>('A');
   const [periodFilter, setPeriodFilter] = useState<number | 'all'>('all');
@@ -311,6 +315,13 @@ export default function GameDetailScreen() {
       },
     ]);
 
+  // チームの試合を消せるのは、記録した本人と運営者だけ（サーバーも同じ規則で断る）
+  const gameSpace = team.spaces.find((sp) => sp.id === game.spaceId);
+  const canDelete =
+    game.spaceId === null || game.createdBy === null || game.createdBy === team.userId || gameSpace?.role === 'owner';
+  const sendTargets = sender.targets(game);
+  const chooseTeam = () => sender.start(game, () => router.back());
+
   const confirmReopen = () =>
     showDialog('試合を再開', `${periodLabel(game.currentPeriod)} の入力に戻ります。`, [
       { text: 'キャンセル', style: 'cancel' },
@@ -363,10 +374,11 @@ export default function GameDetailScreen() {
       {tab === 'periods' && periodScores()}
 
       <View style={styles.footer}>
+        {sendTargets.length > 0 && <Button title="チームに送る" variant="secondary" onPress={chooseTeam} />}
         {game.status === 'finished' && (
           <Button title="誤って終了した試合を再開する" variant="ghost" small onPress={confirmReopen} />
         )}
-        <Button title="この試合を削除" variant="ghost" small onPress={confirmDelete} />
+        {canDelete && <Button title="この試合を削除" variant="ghost" small onPress={confirmDelete} />}
       </View>
 
       <QuickFixSheet
