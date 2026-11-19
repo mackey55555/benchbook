@@ -13,6 +13,7 @@ import { useTeamState } from '@/sync/session';
 import { showDialog, type DialogButton } from './dialog';
 import { Text } from './Text';
 import { colors, radius } from './theme';
+import { useSendToTeam } from './useSendToTeam';
 
 /** 試合の状態に合った画面を開く */
 export function useOpenGame(): (game: Game) => void {
@@ -43,6 +44,7 @@ export function GameRow(props: { row: GameSummary; onChanged: () => void }) {
   const openGame = useOpenGame();
   const b = badgeOf(row);
   const team = useTeamState();
+  const sender = useSendToTeam();
   // チームの試合を消せるのは、記録した本人と運営者だけ
   const canDelete =
     game.spaceId === null ||
@@ -70,6 +72,7 @@ export function GameRow(props: { row: GameSummary; onChanged: () => void }) {
   const menu = () =>
     showDialog(`${game.teamAName || 'A'} vs ${game.teamBName || 'B'}`, game.date, [
       { text: '開く', onPress: () => openGame(game) },
+      ...(sender.targets(game).length > 0 ? [{ text: 'チームに送る', onPress: () => sender.start(game, onChanged) }] : []),
       ...(canDelete ? [deleteButton] : []),
       { text: 'キャンセル', style: 'cancel' },
     ]);
@@ -77,7 +80,7 @@ export function GameRow(props: { row: GameSummary; onChanged: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityHint="長押しで削除などのメニュー"
+      accessibilityHint="長押しで、チームに送る・削除などのメニュー"
       onPress={() => openGame(game)}
       onLongPress={menu}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
