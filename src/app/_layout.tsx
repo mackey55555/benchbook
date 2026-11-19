@@ -95,6 +95,7 @@ export default function RootLayout() {
         <Stack.Screen name="help" options={{ title: '使い方' }} />
         <Stack.Screen name="team/index" options={{ title: 'チームプラン' }} />
         <Stack.Screen name="team/[spaceId]" options={{ title: 'チーム' }} />
+        <Stack.Screen name="team/plan" options={{ title: 'チームプランの契約' }} />
         <Stack.Screen name="join/[token]" options={{ title: 'チームに参加' }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
         <Stack.Screen name="players/[key]" options={{ title: '選手' }} />

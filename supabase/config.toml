@@ -434,3 +434,8 @@ enabled = true
 # サインインは Apple と Google の2つ（docs/SPEC.md 10章）。設定は上の [auth.external.apple]／[auth.external.google]。
 # メールの確認コードは、開発用のアプリでだけ使う（届いたメールは Mailpit http://127.0.0.1:54524 で見られる）。
 # 手元では Google の値に仮の値を入れる（supabase/.env.example を supabase/.env に写す）。
+
+# RevenueCat からの通知の受け口。RevenueCat は Supabase の JWT を持たないので、JWT の確認は切り、
+# 関数の中で Authorization ヘッダーの値（REVENUECAT_WEBHOOK_AUTH）を確かめる
+[functions.revenuecat-webhook]
+verify_jwt = false

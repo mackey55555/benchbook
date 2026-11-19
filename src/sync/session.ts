@@ -133,6 +133,12 @@ export function startSession(): void {
       void loadProfile();
       void syncNow();
     }
+    // 購入の持ち主を合わせる（失敗しても、サインインそのものは続ける）
+    if (changed) {
+      void import('@/billing/purchases')
+        .then((billing) => (user ? billing.identify(user.id) : billing.forget()))
+        .catch(() => undefined);
+    }
   });
   void supabase.auth.getSession().then(({ data }) => {
     set({ ready: true });
@@ -330,6 +336,38 @@ async function loadSubscription(): Promise<void> {
       ? { tier: data.tier as number, expiresAt: Date.parse(data.expires_at as string), productId: data.product_id as string }
       : null,
   });
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * 購入・復元のあとに呼ぶ。契約はストア → RevenueCat → サーバーの順に届くので、
+ * 届くまで少し待ちながら読み直す。届いたら、空いている枠を運営しているチームに割り当てる。
+ * 戻り値は、契約が有効になったか（届かなかったら false。あとで同期すれば反映される）。
+ */
+export async function awaitSubscription(expectedProductId?: string): Promise<boolean> {
+  const matches = () =>
+    isSubscribed(state.subscription, Date.now()) &&
+    (expectedProductId === undefined || state.subscription?.productId === expectedProductId);
+  for (let i = 0; i < 10; i++) {
+    await loadSubscription();
+    if (matches()) break;
+    await wait(2000);
+  }
+  if (!isSubscribed(state.subscription, Date.now())) return false;
+  await syncNow();
+  const tier = state.subscription?.tier ?? 0;
+  const owned = state.spaces.filter((s) => s.role === 'owner' && !s.complimentary);
+  let used = owned.filter((s) => s.slotAssigned).length;
+  for (const space of owned) {
+    if (used >= tier) break;
+    if (space.slotAssigned) continue;
+    const { error } = await client().rpc('set_team_slot', { p_team: space.id, p_assigned: true });
+    if (error) throw error;
+    used++;
+  }
+  await syncNow();
+  return matches();
 }
 
 /** 契約の枠を、チームに割り当てる・外す（運営者だけ） */

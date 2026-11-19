@@ -345,6 +345,7 @@ const formatDate = (ms: number) => {
 /** 運営者の契約の状態 */
 function PlanCard() {
   const team = useTeamState();
+  const router = useRouter();
   const [now] = useState(() => Date.now());
   const paid = team.spaces.filter((s) => s.role === 'owner' && !s.complimentary);
   const used = paid.filter((s) => s.slotAssigned).length;
@@ -360,14 +361,16 @@ function PlanCard() {
             <Text style={styles.body}>
               {formatDate(sub.expiresAt)} まで。{used} / {sub.tier} チームに割り当てています。割り当ては、各チームの画面で入れ替えられます。
             </Text>
+            <Button title="契約の内容を見る・変える" variant="secondary" small onPress={() => router.push('/team/plan')} />
           </>
         ) : (
           <>
             <Text style={styles.lead}>契約がありません</Text>
             <Text style={styles.body}>
               {sub ? `${formatDate(sub.expiresAt)} に契約が切れました。` : ''}
-              チームをメンバー全員で使うには、チームプランの契約が必要です。契約の手続きは準備中です。
+              チームをメンバー全員で使うには、チームプランの契約が必要です。
             </Text>
+            <Button title="料金を見て契約する" variant="accent" onPress={() => router.push('/team/plan')} />
           </>
         )}
       </Card>

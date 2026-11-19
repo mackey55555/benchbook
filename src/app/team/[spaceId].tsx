@@ -177,6 +177,7 @@ export default function TeamScreen() {
 /** 契約の枠を、このチームに割り当てる・外す（運営者だけに出す） */
 function SlotCard(props: { spaceId: string; busy: boolean; run: (action: () => Promise<void>) => Promise<void> }) {
   const team = useTeamState();
+  const router = useRouter();
   const [now] = useState(() => Date.now());
   const space = team.spaces.find((s) => s.id === props.spaceId);
   if (!space) return null;
@@ -188,7 +189,10 @@ function SlotCard(props: { spaceId: string; busy: boolean; run: (action: () => P
       <SectionTitle>契約</SectionTitle>
       <Card>
         {!subscribed ? (
-          <Text style={styles.body}>チームプランの契約がありません。契約すると、このチームをメンバー全員で使えます。</Text>
+          <>
+            <Text style={styles.body}>チームプランの契約がありません。契約すると、このチームをメンバー全員で使えます。</Text>
+            <Button title="料金を見て契約する" variant="accent" onPress={() => router.push('/team/plan')} />
+          </>
         ) : space.slotAssigned ? (
           <>
             <Text style={styles.body}>
