@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
 import { getLiveGame } from '@/db/repo';
+import { teamEnabled } from '@/sync/client';
 import { applyUpdate, canCheckUpdate, checkForUpdate, useUpdateState } from '@/ui/appUpdate';
 import { Button, Card, SectionTitle } from '@/ui/components';
 import { Text } from '@/ui/Text';
@@ -27,6 +28,14 @@ const WEB_LINKS = [
   { url: 'https://arti-lab.jp/products/benchbook/privacy', label: 'プライバシーポリシー' },
 ] as const;
 
+const TEAM_LINK = {
+  href: '/team',
+  label: 'チームプラン',
+  body: 'メンバー全員で、同じ記録と成績を見る',
+  icon: 'people-circle-outline',
+  bg: colors.okBg,
+} as const;
+
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -41,7 +50,7 @@ export default function SettingsScreen() {
       contentContainerStyle={[styles.container, { paddingTop: insets.top + 12 }]}
     >
       <Text style={styles.title}>設定</Text>
-      {LINKS.map((l) => (
+      {(teamEnabled ? [...LINKS, TEAM_LINK] : LINKS).map((l) => (
         <Pressable
           key={l.href}
           accessibilityRole="button"

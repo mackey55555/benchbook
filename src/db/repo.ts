@@ -1210,3 +1210,107 @@ export function reopenGame(db: Db, gameId: string): void {
     tx.update(games).set({ status: 'live', finishedAt: null }).where(eq(games.id, gameId)).run();
   });
 }
+
+// ---------------------------------------------------------------- チームに送る
+
+export interface SendGameResult {
+  /** チームの名簿に足した選手の数 */
+  addedPlayers: number;
+  /** 名簿と結び付けられなかった選手の数（同じ背番号に別の名前の選手がいた） */
+  unlinked: number;
+}
+
+/** 送り先のチームに、同じ日・同じ対戦の試合がすでにあるか（二重に送るのを防ぐための確認用） */
+export function findSimilarGame(db: Db, gameId: string, spaceId: string): Game | undefined {
+  const game = getGame(db, gameId);
+  if (!game) return undefined;
+  return db
+    .select()
+    .from(games)
+    .where(
+      and(
+        eq(games.spaceId, spaceId),
+        eq(games.date, game.date),
+        eq(games.teamAName, game.teamAName),
+        eq(games.teamBName, game.teamBName),
+      ),
+    )
+    .get();
+}
+
+/**
+ * 個人の置き場所の試合を、チームへ移す。移した試合は次の同期でサーバーへ送られる。
+ * 自チーム側の出場選手は、チームの名簿と背番号・氏名で突き合わせる。
+ * 名簿にいない選手は名簿に足し、同じ背番号に別の名前の選手がいるときは結び付けない。
+ */
+export function sendGameToSpace(db: Db, gameId: string, spaceId: string): SendGameResult {
+  const game = getGame(db, gameId);
+  if (!game || game.id === PRACTICE_GAME_ID) throw new RepoError('試合が見つかりません');
+  if (game.spaceId !== null) throw new RepoError('この試合はすでにチームにあります');
+  if (game.status !== 'finished') throw new RepoError('チームに送れるのは、終了した試合です');
+  const space = db.select().from(spaces).where(eq(spaces.id, spaceId)).get();
+  if (!space || !space.active) throw new RepoError('このチームは、いま使えません');
+
+  return db.transaction((tx) => {
+    const result: SendGameResult = { addedPlayers: 0, unlinked: 0 };
+    const squadId = ownSquadId(spaceId);
+    if (!tx.select().from(teams).where(eq(teams.id, squadId)).get()) {
+      tx.insert(teams)
+        .values({ id: squadId, name: space.name, isOwn: true, createdAt: Date.now(), spaceId, dirty: 1 })
+        .run();
+    }
+    const squad = tx.select().from(players).where(eq(players.teamId, squadId)).all();
+    const roster = tx.select().from(gameRoster).where(eq(gameRoster.gameId, gameId)).all();
+    for (const r of roster) {
+      let playerId: string | null = null;
+      if (r.side === game.ownSide) {
+        const sameNumber = squad.find((p) => p.number === r.number);
+        if (!sameNumber) {
+          const player: Player = { id: ulid(), teamId: squadId, number: r.number, name: r.name, isActive: true, dirty: 1 };
+          tx.insert(players).values(player).run();
+          squad.push(player);
+          playerId = player.id;
+          result.addedPlayers++;
+        } else if (sameNumber.name === r.name || !sameNumber.name || !r.name) {
+          playerId = sameNumber.id;
+        } else {
+          result.unlinked++;
+        }
+      }
+      // 相手側は、個人の置き場所のチームを指しているので外す
+      tx.update(gameRoster).set({ playerId, dirty: 1 }).where(eq(gameRoster.id, r.id)).run();
+    }
+    tx.update(gameStaff).set({ dirty: 1 }).where(eq(gameStaff.gameId, gameId)).run();
+    tx.update(gameEvents).set({ dirty: 1 }).where(eq(gameEvents.gameId, gameId)).run();
+    tx.update(periodChecks).set({ dirty: 1 }).where(eq(periodChecks.gameId, gameId)).run();
+    tx.update(games).set({ spaceId, dirty: 1 }).where(eq(games.id, gameId)).run();
+    return result;
+  });
+}
+
+/**
+ * 個人の置き場所の自チーム名簿を、チームの名簿に写す（チームを作った直後に使う）。
+ * すでにチームの名簿に選手がいるときは何もしない。
+ */
+export function copyOwnRosterToSpace(db: Db, spaceId: string, name: string): number {
+  return db.transaction((tx) => {
+    const squadId = ownSquadId(spaceId);
+    if (!tx.select().from(teams).where(eq(teams.id, squadId)).get()) {
+      tx.insert(teams).values({ id: squadId, name, isOwn: true, createdAt: Date.now(), spaceId, dirty: 1 }).run();
+    }
+    if (tx.select().from(players).where(eq(players.teamId, squadId)).get()) return 0;
+    const personal = tx.select().from(teams).where(and(eq(teams.isOwn, true), isNull(teams.spaceId))).get();
+    if (!personal) return 0;
+    const source = tx.select().from(players).where(eq(players.teamId, personal.id)).all();
+    for (const p of source) {
+      tx.insert(players)
+        .values({ id: ulid(), teamId: squadId, number: p.number, name: p.name, isActive: p.isActive, dirty: 1 })
+        .run();
+    }
+    return source.length;
+  });
+}
+
+export function listSpaces(db: Db): schema.Space[] {
+  return db.select().from(spaces).orderBy(asc(spaces.name)).all();
+}

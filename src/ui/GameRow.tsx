@@ -8,7 +8,9 @@ import { deleteGame, isPeriodEnded, listEvents, type GameSummary } from '@/db/re
 import type { Game } from '@/db/schema';
 import { gameResult } from '@/domain/analysis';
 
-import { showDialog } from './dialog';
+import { useTeamState } from '@/sync/session';
+
+import { showDialog, type DialogButton } from './dialog';
 import { Text } from './Text';
 import { colors, radius } from './theme';
 
@@ -40,27 +42,35 @@ export function GameRow(props: { row: GameSummary; onChanged: () => void }) {
   const { game, score } = row;
   const openGame = useOpenGame();
   const b = badgeOf(row);
+  const team = useTeamState();
+  // チームの試合を消せるのは、記録した本人と運営者だけ
+  const canDelete =
+    game.spaceId === null ||
+    game.createdBy === null ||
+    game.createdBy === team.userId ||
+    team.spaces.find((sp) => sp.id === game.spaceId)?.role === 'owner';
 
   // 間違って作った試合などを消せる
+  const deleteButton: DialogButton = {
+    text: 'この試合を削除',
+    style: 'destructive',
+    onPress: () =>
+      showDialog('試合を削除', 'この試合の記録をすべて削除します。元に戻せません。', [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除',
+          style: 'destructive',
+          onPress: () => {
+            deleteGame(db, game.id);
+            onChanged();
+          },
+        },
+      ]),
+  };
   const menu = () =>
     showDialog(`${game.teamAName || 'A'} vs ${game.teamBName || 'B'}`, game.date, [
       { text: '開く', onPress: () => openGame(game) },
-      {
-        text: 'この試合を削除',
-        style: 'destructive',
-        onPress: () =>
-          showDialog('試合を削除', 'この試合の記録をすべて削除します。元に戻せません。', [
-            { text: 'キャンセル', style: 'cancel' },
-            {
-              text: '削除',
-              style: 'destructive',
-              onPress: () => {
-                deleteGame(db, game.id);
-                onChanged();
-              },
-            },
-          ]),
-      },
+      ...(canDelete ? [deleteButton] : []),
       { text: 'キャンセル', style: 'cancel' },
     ]);
 

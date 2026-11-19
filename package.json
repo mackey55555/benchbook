@@ -51,8 +51,7 @@
     "ios": "expo run:ios",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
-    "test:sync": "sh scripts/test-sync.sh"
+    "test": "jest"
   },
   "private": true,
   "jest": {

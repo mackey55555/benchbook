@@ -1,5 +1,5 @@
 /**
- * 手元の Supabase を相手にした通しの確認。`supabase start` をしてから `npm run test:sync` で動かす。
+ * 手元の Supabase を相手にした通しの確認。`supabase start` をしてから `sh scripts/test-sync.sh` で動かす。
  * ふだんの `npx jest` には含めない（サーバーが要るため）。
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -26,7 +26,7 @@ import { pendingCount, syncSpace } from '../engine';
 import { supabaseRemote } from '../supabaseRemote';
 
 const URL = process.env.SUPABASE_TEST_URL;
-if (!URL) throw new Error('SUPABASE_TEST_URL がありません。npm run test:sync から動かしてください');
+if (!URL) throw new Error('SUPABASE_TEST_URL がありません。sh scripts/test-sync.sh から動かしてください');
 const ANON = process.env.SUPABASE_TEST_ANON ?? '';
 const SERVICE = process.env.SUPABASE_TEST_SERVICE ?? '';
 

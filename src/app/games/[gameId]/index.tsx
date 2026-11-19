@@ -6,7 +6,7 @@ import { WebView } from 'react-native-webview';
 
 import { exportGame } from '@/db/backup';
 import { db } from '@/db/client';
-import { deleteGame, reopenGame } from '@/db/repo';
+import { deleteGame, findSimilarGame, reopenGame, sendGameToSpace } from '@/db/repo';
 import { computeLineupStats, formatClock } from '@/domain/lineup';
 import { RULES, activeEvents, computePeriodScores, computeScore, periodLabel } from '@/domain/rules';
 import { buildBoxScore, describeEvent, teamOnlyLine, type BoxScoreLine } from '@/domain/stats';
@@ -23,6 +23,7 @@ import { Text } from '@/ui/Text';
 import { colors, fonts, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 import { showDialog } from '@/ui/dialog';
+import { syncNow, useTeamState } from '@/sync/session';
 
 type Tab = 'running' | 'box' | 'flow' | 'plays' | 'periods';
 
@@ -49,6 +50,7 @@ export default function GameDetailScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { bundle, reload } = useGame(gameId);
+  const team = useTeamState();
   const [tab, setTab] = useState<Tab>('running');
   const [boxSide, setBoxSide] = useState<Side>('A');
   const [periodFilter, setPeriodFilter] = useState<number | 'all'>('all');
@@ -311,6 +313,47 @@ export default function GameDetailScreen() {
       },
     ]);
 
+  // チームの試合を消せるのは、記録した本人と運営者だけ（サーバーも同じ規則で断る）
+  const gameSpace = team.spaces.find((sp) => sp.id === game.spaceId);
+  const canDelete =
+    game.spaceId === null || game.createdBy === null || game.createdBy === team.userId || gameSpace?.role === 'owner';
+  const sendTargets =
+    game.spaceId === null && game.status === 'finished' && team.userId ? team.spaces.filter((sp) => sp.active) : [];
+
+  const sendTo = (spaceId: string, name: string) => {
+    const send = () => {
+      let result: ReturnType<typeof sendGameToSpace> | undefined;
+      if (!attempt(() => (result = sendGameToSpace(db, gameId, spaceId)))) return;
+      void syncNow();
+      const notes = [
+        result?.addedPlayers ? `チームの名簿に ${result.addedPlayers} 人を足しました。` : '',
+        result?.unlinked
+          ? `${result.unlinked} 人は、同じ背番号に別の名前の選手がいたため、名簿と結び付けていません。`
+          : '',
+      ].filter(Boolean);
+      showDialog(`「${name}」に送りました`, ['メンバー全員のアプリに届きます。', ...notes].join('\n'));
+      router.back();
+    };
+    const similar = findSimilarGame(db, gameId, spaceId);
+    showDialog(
+      `「${name}」に送りますか？`,
+      similar
+        ? '同じ日・同じ対戦の試合が、すでにチームにあります。ほかの人が送った試合と重ならないか、確かめてください。'
+        : 'この試合を個人からチームへ移します。メンバー全員が見て、直せるようになります。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: similar ? 'それでも送る' : '送る', onPress: send },
+      ],
+    );
+  };
+  const chooseTeam = () => {
+    if (sendTargets.length === 1) return sendTo(sendTargets[0].id, sendTargets[0].name);
+    showDialog('どのチームに送りますか？', undefined, [
+      ...sendTargets.slice(0, 5).map((sp) => ({ text: sp.name, onPress: () => sendTo(sp.id, sp.name) })),
+      { text: 'キャンセル', style: 'cancel' as const },
+    ]);
+  };
+
   const confirmReopen = () =>
     showDialog('試合を再開', `${periodLabel(game.currentPeriod)} の入力に戻ります。`, [
       { text: 'キャンセル', style: 'cancel' },
@@ -363,10 +406,11 @@ export default function GameDetailScreen() {
       {tab === 'periods' && periodScores()}
 
       <View style={styles.footer}>
+        {sendTargets.length > 0 && <Button title="チームに送る" variant="secondary" onPress={chooseTeam} />}
         {game.status === 'finished' && (
           <Button title="誤って終了した試合を再開する" variant="ghost" small onPress={confirmReopen} />
         )}
-        <Button title="この試合を削除" variant="ghost" small onPress={confirmDelete} />
+        {canDelete && <Button title="この試合を削除" variant="ghost" small onPress={confirmDelete} />}
       </View>
 
       <QuickFixSheet

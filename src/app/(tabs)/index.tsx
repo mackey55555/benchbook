@@ -13,6 +13,7 @@ import { periodLabel } from '@/domain/rules';
 import { applyUpdate, checkForUpdate, useUpdateState } from '@/ui/appUpdate';
 import { Button, SectionTitle } from '@/ui/components';
 import { GameRow, useOpenGame } from '@/ui/GameRow';
+import { SpaceSwitcher } from '@/ui/SpaceSwitcher';
 import { Text } from '@/ui/Text';
 import { colors, radius } from '@/ui/theme';
 import { useRefresh } from '@/ui/useGame';
@@ -95,6 +96,8 @@ export default function HomeScreen() {
         <Image source={require('../../../assets/mark.png')} style={styles.mark} accessibilityIgnoresInvertColors />
         <Text style={styles.wordmark}>Benchbook</Text>
       </View>
+
+      <SpaceSwitcher />
 
       {update.ready && (
         <View style={styles.update}>

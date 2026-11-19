@@ -20,6 +20,7 @@ import { colors, fonts } from '@/ui/theme';
 
 import migrations from '../../drizzle/migrations';
 import { DialogHost } from '@/ui/dialog';
+import { SyncHost } from '@/ui/SyncHost';
 
 // フォントとDBの準備が終わるまでスプラッシュを出したままにする。
 // 準備が一瞬で終わってもロゴが見えるよう、最低でもこの時間は表示する
@@ -92,6 +93,9 @@ export default function RootLayout() {
         <Stack.Screen name="teams/[teamId]" options={{ title: 'チーム' }} />
         <Stack.Screen name="backup" options={{ title: 'バックアップ' }} />
         <Stack.Screen name="help" options={{ title: '使い方' }} />
+        <Stack.Screen name="team/index" options={{ title: 'チームプラン' }} />
+        <Stack.Screen name="team/[spaceId]" options={{ title: 'チーム' }} />
+        <Stack.Screen name="join/[token]" options={{ title: 'チームに参加' }} />
         <Stack.Screen name="players/[key]" options={{ title: '選手' }} />
         <Stack.Screen name="games/[gameId]/prep" options={{ title: '試合準備' }} />
         <Stack.Screen name="games/[gameId]/index" options={{ title: '試合詳細' }} />
@@ -104,6 +108,7 @@ export default function RootLayout() {
           options={{ orientation: 'landscape', headerShown: false, gestureEnabled: false }}
         />
       </Stack>
+      <SyncHost />
       <DialogHost />
     </View>
   );
