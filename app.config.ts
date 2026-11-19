@@ -27,6 +27,8 @@ const config: ExpoConfig = {
     supportsTablet: false,
     // チームプランのサインイン（Appleでサインイン）
     usesAppleSignIn: true,
+    // チームへの招待リンク（https://arti-lab.jp/products/benchbook/join/…）を、アプリで直接開く
+    associatedDomains: ['applinks:arti-lab.jp'],
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },

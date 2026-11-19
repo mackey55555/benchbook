@@ -403,7 +403,8 @@ export async function createInvite(teamId: string): Promise<string> {
   return data as string;
 }
 
-export const inviteLink = (token: string): string => `benchbook://join/${token}`;
+/** 招待のリンク。アプリが入っている iPhone ではアプリが開き、なければ製品サイトの案内のページが出る */
+export const inviteLink = (token: string): string => `https://arti-lab.jp/products/benchbook/join/${token}`;
 
 /** 貼り付けられた招待のリンク・コードから、コードだけを取り出す */
 export function parseInvite(text: string): string {

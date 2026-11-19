@@ -65,8 +65,7 @@ export default function TeamScreen() {
       await Share.share({
         message:
           `Benchbook のチーム「${space.name}」への招待です。\n` +
-          `アプリを入れてから、下のリンクを開いてください（14日間有効）。\n${inviteLink(token)}\n\n` +
-          `開けないときは、アプリの「設定 → チームプラン → 招待で入る」に、次のコードを貼ってください。\n${token}`,
+          `下のリンクを開いて、参加してください（14日間有効）。\n${inviteLink(token)}`,
       });
     });
 
