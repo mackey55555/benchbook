@@ -49,8 +49,12 @@ export interface Subscription {
   productId: string;
 }
 
-/** 契約が有効か（期限内か） */
-export const isSubscribed = (s: Subscription | null, now: number): boolean => s !== null && s.expiresAt > now;
+/** 期限を過ぎても有効として扱う時間。サーバーの subscription_grace() と同じにする（更新の知らせが遅れて届くため） */
+const SUBSCRIPTION_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** 契約が有効か（期限内か。期限から1日はまだ有効） */
+export const isSubscribed = (s: Subscription | null, now: number): boolean =>
+  s !== null && s.expiresAt + SUBSCRIPTION_GRACE_MS > now;
 
 let state: TeamState = {
   ready: supabase === null,

@@ -460,6 +460,7 @@ iOSで無料版、続けてチームプランまで出し、そのあとAndroid�
 - **契約の確認（RevenueCat）**：RevenueCat からの通知を `supabase/functions/revenuecat-webhook` で受ける。通知の中身は合図としてだけ使い、実際の状態は RevenueCat に問い合わせて取り直す。商品IDは `team_<チーム数>_monthly`／`team_<チーム数>_yearly`（1〜5）。RevenueCat の利用者IDには、サーバーの利用者ID（UUID）を使う
 - **購入の画面**（`src/app/team/plan.tsx`、`src/billing/purchases.ts`）：チーム数（1〜5）と月払い・年払いを選んで買う。料金はストアから読んで出す（アプリには書かない）。RevenueCat の「Offering」は使わず、商品IDで直接買う。購入・復元のあとは、サーバーの契約の行が届くまで最大20秒ほど読み直し、届いたら空いている枠を運営しているチームに順に割り当てる。「購入を復元」「契約の管理・解約」「利用規約（Apple の標準）」「プライバシーポリシー」を置く。キー（`EXPO_PUBLIC_REVENUECAT_IOS_KEY`）のないビルドと Android では買えない（開発用のアプリでは、見本の料金で並びだけ確かめられる）
 - **通知の受け口はクラウドに配置済み**（2026-11-19）：`https://fajgqsfanpningrmzseb.supabase.co/functions/v1/revenuecat-webhook`。RevenueCat の Webhook 設定に、この URL と Authorization ヘッダーの値（`REVENUECAT_WEBHOOK_AUTH`）を入れる。JWT の確認は切ってある（`supabase/config.toml`）。配置は `supabase functions deploy revenuecat-webhook --use-api`
+- **期限のゆとり（1日）**：契約の期限を過ぎても、1日は有効として扱う（サーバーの `subscription_grace()`、アプリの `isSubscribed`）。更新の知らせが期限より遅れて届くことがあるため（試験環境で4分半の遅れを確認、2026-11-19）。ゆとりがないと、その間メンバーの端末から、ほかの人が記録した試合がいったん消える
 
 - **契約がないチーム（契約切れ・契約前）**：ホームの切り替えで開ける。自分が記録した試合だけを見て直せて、同期はしない。使えなくなった時点で、ほかの人が記録した試合は端末から消す（サーバーには残り、契約が戻ると受け取り直す）。分析は無料の範囲になる
 - **招待のリンク**：`https://arti-lab.jp/products/benchbook/join/<コード>`。アプリが入っている iPhone ではアプリの参加の画面が開き（ユニバーサルリンク。`src/app/+native-intent.ts` で画面のアドレスに直す）、それ以外では製品サイトの案内のページが出る。サイト側は arti-web-site の下書きPR（チームプランの公開時にマージ）

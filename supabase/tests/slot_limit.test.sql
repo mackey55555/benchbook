@@ -1,5 +1,5 @@
 begin;
-select plan(9);
+select plan(10);
 
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000d1', 'slot-owner@example.com');
 
@@ -61,7 +61,10 @@ update public.teams set complimentary = true where name = 'S3';
 select is(pg_temp.active('S3') and pg_temp.active('S2'), true, '特別扱いのチームは枠を使わず、ほかのチームを押し出さない');
 
 -- 契約が切れると、割り当て済みでも有効でなくなる
-update public.subscriptions set expires_at = now() - interval '1 minute';
+-- 期限を過ぎても、1日は有効のまま（更新の知らせが遅れて届くことがあるため）
+update public.subscriptions set expires_at = now() - interval '1 hour';
+select is(pg_temp.active('S2'), true, '期限を過ぎて1日以内は、まだ有効');
+update public.subscriptions set expires_at = now() - interval '25 hours';
 select is(pg_temp.active('S2'), false, '契約が切れたら有効でなくなる');
 select is(pg_temp.active('S3'), true, '特別扱いのチームは契約が切れても有効');
 
