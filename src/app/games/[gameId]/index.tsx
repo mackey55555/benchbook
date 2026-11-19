@@ -9,20 +9,22 @@ import { db } from '@/db/client';
 import { deleteGame, reopenGame } from '@/db/repo';
 import { computeLineupStats, formatClock } from '@/domain/lineup';
 import { RULES, activeEvents, computePeriodScores, computeScore, periodLabel } from '@/domain/rules';
-import { buildBoxScore, describeEvent, type BoxScoreLine } from '@/domain/stats';
+import { buildBoxScore, describeEvent, teamOnlyLine, type BoxScoreLine } from '@/domain/stats';
 import type { Side } from '@/domain/types';
 import { shareImage, shareJson, sharePdf } from '@/lib/share';
 import { buildBoxScoreHtml } from '@/output/boxScoreHtml';
+import { buildGameFlowHtml, buildPlayByPlayHtml } from '@/output/gameFlowHtml';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Button, Card, Chip, Row, Segmented } from '@/ui/components';
 import { EventLogSheet } from '@/ui/EventLogSheet';
+import { HelpButton } from '@/ui/HelpButton';
 import { QuickFixSheet } from '@/ui/QuickFixSheet';
 import { Text } from '@/ui/Text';
 import { colors, fonts, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 import { showDialog } from '@/ui/dialog';
 
-type Tab = 'running' | 'box' | 'plays' | 'periods';
+type Tab = 'running' | 'box' | 'flow' | 'plays' | 'periods';
 
 const A4_RATIO = 297 / 210;
 
@@ -58,6 +60,7 @@ export default function GameDetailScreen() {
 
   const html = useMemo(() => (bundle ? buildRunningScoreHtml(bundle) : ''), [bundle]);
   const boxHtml = useMemo(() => (bundle ? buildBoxScoreHtml(bundle) : ''), [bundle]);
+  const flowHtml = useMemo(() => (bundle && tab === 'flow' ? buildGameFlowHtml(bundle) : ''), [bundle, tab]);
   const baseName = bundle
     ? `${bundle.game.date}_${bundle.game.teamAName || 'A'}_vs_${bundle.game.teamBName || 'B'}`
     : 'benchbook';
@@ -134,6 +137,8 @@ export default function GameDetailScreen() {
   };
 
   const running = () => <View style={styles.tabBody}>{sheet(html, baseName, true)}</View>;
+  // 試合の流れ（得点の流れ、時間帯別、連続得点、コート上の組み合わせ）
+  const flow = () => <View style={styles.tabBody}>{sheet(flowHtml, `${baseName}_flow`, false)}</View>;
 
   const box = () => {
     const team = buildBoxScore(events, roster, filterPeriod)[boxSide];
@@ -164,6 +169,22 @@ export default function GameDetailScreen() {
           </Text>
         ))}
         {lineupCells(isTotal ? null : l.rosterId)}
+      </View>
+    );
+    // 選手を選ばずに記録した、チームのリバウンドとTO。記録があるときだけ行を出す
+    const teamOnly = teamOnlyLine(team);
+    const teamOnlyRow = (teamOnly.reb > 0 || teamOnly.tov > 0) && (
+      <View style={styles.tr}>
+        <Text style={[styles.td, styles.tdNo]} />
+        <Text style={[styles.td, styles.tdName]} numberOfLines={1}>
+          チーム
+        </Text>
+        {BOX_COLUMNS.map((c) => (
+          <Text key={c.key} style={styles.td}>
+            {['oreb', 'dreb', 'reb', 'tov'].includes(c.key) ? c.value(teamOnly) : ''}
+          </Text>
+        ))}
+        {lineupCells(null)}
       </View>
     );
     return (
@@ -197,6 +218,7 @@ export default function GameDetailScreen() {
               )}
             </View>
             {team.players.map((l) => line(l))}
+            {teamOnlyRow}
             {line(team.total, true)}
           </View>
         </ScrollView>
@@ -211,7 +233,16 @@ export default function GameDetailScreen() {
     return (
       <View style={styles.tabBody}>
         {periodChips}
-        <Button title="記録を修正・削除する" variant="secondary" small onPress={() => setLogOpen(true)} />
+        <Row>
+          <Button title="記録を修正・削除する" variant="secondary" small onPress={() => setLogOpen(true)} />
+          <Button
+            title="PDF"
+            variant="secondary"
+            small
+            disabled={busy}
+            onPress={() => share(() => sharePdf(buildPlayByPlayHtml(bundle), `${baseName}_plays`))}
+          />
+        </Row>
         {list.length === 0 && <Text style={styles.note}>記録がありません</Text>}
         {list.map((e, i) => (
           <Row key={e.id} style={styles.play}>
@@ -293,7 +324,7 @@ export default function GameDetailScreen() {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
-      <Stack.Screen options={{ title: game.date }} />
+      <Stack.Screen options={{ title: game.date, headerRight: () => <HelpButton topic="after" /> }} />
       <View style={styles.header}>
         <Text style={styles.meta}>
           {[game.leagueName, game.venue].filter(Boolean).join('　') || ' '}
@@ -318,6 +349,7 @@ export default function GameDetailScreen() {
         options={[
           { value: 'running', label: 'ランニング' },
           { value: 'box', label: 'ボックス' },
+          { value: 'flow', label: '流れ' },
           { value: 'plays', label: 'プレー' },
           { value: 'periods', label: 'Q別' },
         ]}
@@ -326,6 +358,7 @@ export default function GameDetailScreen() {
       />
       {tab === 'running' && running()}
       {tab === 'box' && box()}
+      {tab === 'flow' && flow()}
       {tab === 'plays' && plays()}
       {tab === 'periods' && periodScores()}
 

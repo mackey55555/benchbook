@@ -1,6 +1,7 @@
-import { computeLineupStats, formatClock } from './lineup';
-import { RULES, computeScore } from './rules';
+import { ON_COURT_MAX, computeLineupStats, formatClock } from './lineup';
+import { RULES, compareNumbers, computeScore } from './rules';
 import { buildBoxScore, type BoxScoreLine } from './stats';
+import { buildTimeline, computeUnitStats, timeBands } from './timeline';
 import type { GameEvent, GameStatus, RosterEntry, Score, Side } from './types';
 
 export type GameResult = 'win' | 'lose' | 'draw';
@@ -94,6 +95,8 @@ export interface StatLine extends BoxScoreLine {
   lineupGames?: number;
   /** 時刻なしの交代を含み、出場時間が概算になっている */
   approximate?: boolean;
+  /** 出場時間のある試合だけの成績の合計（40分換算に使う。出場時間と同じ試合をそろえるため） */
+  tracked?: Record<LineKey, number>;
 }
 
 export interface AnalysisGame {
@@ -145,6 +148,26 @@ export interface PlayerAnalysis {
   log: PlayerGameLog[];
 }
 
+/** 時間帯別の得点（時計を使った試合の合計） */
+export interface BandTotal {
+  key: string;
+  label: string;
+  own: number;
+  opp: number;
+}
+
+/** コート上の組み合わせごとの成績（期間の合計） */
+export interface UnitAnalysis {
+  key: string;
+  /** 背番号（番号順） */
+  numbers: string[];
+  games: number;
+  seconds: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  approximate: boolean;
+}
+
 export interface TeamAnalysis {
   /** 自チームの名前（いちばん新しい試合での名前） */
   teamName: string;
@@ -160,6 +183,11 @@ export interface TeamAnalysis {
   own: BoxScoreLine;
   opp: BoxScoreLine;
   players: PlayerAnalysis[];
+  /** 時間帯別の得点。規定の4ピリオドすべてで時計を使った試合（timedGames）だけを足したもの */
+  timedGames: number;
+  bands: BandTotal[];
+  /** 5人の組み合わせ（出場時間の長い順）。先発と交代を記録した試合の分だけ */
+  units: UnitAnalysis[];
 }
 
 const LINE_KEYS = [
@@ -179,6 +207,7 @@ const LINE_KEYS = [
   'tov',
   'pf',
 ] as const satisfies readonly (keyof BoxScoreLine)[];
+type LineKey = (typeof LINE_KEYS)[number];
 
 function zeroLine(number = '', name = ''): StatLine {
   const line = { rosterId: null, number, name } as StatLine;
@@ -217,7 +246,12 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
     own: zeroLine('', 'TEAM'),
     opp: zeroLine('', 'TEAM'),
     players: [],
+    timedGames: 0,
+    bands: [],
+    units: [],
   };
+  const bands = new Map<string, BandTotal>();
+  const units = new Map<string, UnitAnalysis>();
   const periodTotals = Array.from({ length: RULES.regulationPeriods }, () => ({ own: 0, opp: 0 }));
   const players = new Map<string, PlayerAnalysis>();
 
@@ -252,12 +286,55 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
     addLine(result.opp, box[oppSide].total);
     const playerIdOf = new Map(roster.map((r) => [r.id, r.playerId]));
     // 出場時間と +/-。先発と交代を記録していないチームの選手は含まれない
-    const lineup = computeLineupStats(events, roster, {
+    const cfg = {
       periodMinutes: game.periodMinutes ?? 10,
       otMinutes: game.otMinutes ?? 5,
       currentPeriod: game.currentPeriod ?? RULES.regulationPeriods,
       finished: true,
-    });
+    };
+    const lineup = computeLineupStats(events, roster, cfg);
+
+    // 時間帯別。前半・後半に分けるには時刻が要るので、規定の4ピリオドすべてで時計を使った試合だけを足す
+    const timeline = buildTimeline(events, cfg);
+    if (timeline.regulationTimed) {
+      result.timedGames++;
+      for (const band of timeBands(timeline)) {
+        // 延長は試合によって有無が違うので、平均には入れない
+        if (!band.score || /^p\d+$/.test(band.key)) continue;
+        let total = bands.get(band.key);
+        if (!total) {
+          total = { key: band.key, label: band.label, own: 0, opp: 0 };
+          bands.set(band.key, total);
+        }
+        total.own += band.score[ownSide];
+        total.opp += band.score[oppSide];
+      }
+    }
+
+    // 5人の組み合わせ。選手は試合をまたいで同じ人として束ねる
+    const keyOf = (rosterId: string) => {
+      const r = roster.find((x) => x.id === rosterId);
+      return r ? (r.playerId ?? `${r.number}\n${r.name}`) : rosterId;
+    };
+    const unitStats = computeUnitStats(events, roster, cfg, ownSide);
+    for (const u of unitStats?.units ?? []) {
+      if (u.rosterIds.length !== ON_COURT_MAX) continue;
+      const key = u.rosterIds.map(keyOf).sort().join('|');
+      let unit = units.get(key);
+      if (!unit) {
+        unit = { key, numbers: [], games: 0, seconds: 0, pointsFor: 0, pointsAgainst: 0, approximate: false };
+        units.set(key, unit);
+      }
+      // 背番号は新しい試合のものを使う
+      unit.numbers = u.rosterIds
+        .map((id) => roster.find((x) => x.id === id)?.number ?? '?')
+        .sort(compareNumbers);
+      unit.games++;
+      unit.seconds += u.seconds;
+      unit.pointsFor += u.pointsFor;
+      unit.pointsAgainst += u.pointsAgainst;
+      unit.approximate = unit.approximate || (unitStats?.approximate ?? false);
+    }
     for (const line of box[ownSide].players) {
       const playerId = line.rosterId ? playerIdOf.get(line.rosterId) : null;
       const key = playerId ?? `${line.number}\n${line.name}`;
@@ -280,6 +357,8 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
         p.line.plusMinus = (p.line.plusMinus ?? 0) + stat.plusMinus;
         p.line.lineupGames = (p.line.lineupGames ?? 0) + 1;
         p.line.approximate = p.line.approximate || stat.approximate;
+        const tracked = (p.line.tracked ??= Object.fromEntries(LINE_KEYS.map((k) => [k, 0])) as Record<LineKey, number>);
+        for (const k of LINE_KEYS) tracked[k] += line[k];
       }
       p.log.push({ gameId: game.id, date: game.date, opponent, result: outcome, line: gameLine });
     }
@@ -291,12 +370,22 @@ export function analyzeTeam(games: readonly AnalysisGame[]): TeamAnalysis {
     opp: perGame(t.opp, sorted.length),
   }));
   result.players = [...players.values()];
+  result.bands = [...bands.values()];
+  result.units = [...units.values()].sort((a, b) => b.seconds - a.seconds);
   return result;
 }
 
 // ---------------------------------------------------------------- 成績の項目
 
-export type StatMode = 'total' | 'avg';
+/** per40 は40分あたりの換算（選手用）。出場時間のある試合の成績を、その出場時間で割って出す */
+export type StatMode = 'total' | 'avg' | 'per40';
+
+export const STAT_MODE_LABELS: Record<StatMode, string> = { avg: '1試合平均', total: '合計', per40: '40分換算' };
+
+/** 40分換算の基準（秒） */
+const PER40_SECONDS = 40 * 60;
+/** これより出場時間が短い選手は、換算すると数字が跳ねるので出さない（秒） */
+export const PER40_MIN_SECONDS = 5 * 60;
 
 export interface StatColumn {
   key: string;
@@ -373,6 +462,15 @@ export function statColumn(key: string): StatColumn {
 export function statValue(col: StatColumn, line: StatLine, games: number, mode: StatMode): number | null {
   const v = col.get(line);
   if (v === null || col.kind === 'pct' || mode === 'total') return v;
+  if (mode === 'per40') {
+    // 出場時間は換算しない（1試合平均を出す）
+    if (col.kind === 'time') return perGame(v, line.lineupGames ?? 0);
+    const seconds = line.seconds ?? 0;
+    // 出場時間の記録が無い行（交代を記録していない選手、チーム合計）と、出場時間が短すぎる行は出さない
+    if (!line.lineupGames || seconds < PER40_MIN_SECONDS) return null;
+    const base = col.kind === 'pm' ? v : (line.tracked?.[col.key as LineKey] ?? 0);
+    return (base * PER40_SECONDS) / seconds;
+  }
   if (col.kind === 'time' || col.kind === 'pm') return perGame(v, line.lineupGames ?? 0);
   return perGame(v, games);
 }

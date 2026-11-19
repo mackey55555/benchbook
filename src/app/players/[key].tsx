@@ -31,6 +31,7 @@ const RESULT_LABELS = { win: '勝', lose: '負', draw: '分' } as const;
 const MODES: { value: StatMode; label: string }[] = [
   { value: 'avg', label: '1試合平均' },
   { value: 'total', label: '合計' },
+  { value: 'per40', label: '40分換算' },
 ];
 const SHOTS = [
   { label: '2点', made: 'fg2m', att: 'fg2a' },
@@ -265,7 +266,7 @@ const styles = StyleSheet.create({
   heroLabel: { fontSize: 11, fontWeight: '700', color: colors.onInkSub },
   heroValue: { fontSize: 34, lineHeight: 38, color: colors.primaryText },
   heroTotal: { fontSize: 11, color: colors.onInkSub },
-  modes: { width: 170 },
+  modes: { width: 250 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   stat: { width: '31.5%', flexGrow: 1, backgroundColor: colors.card, borderRadius: radius.md, padding: 10, gap: 2 },
   statLabel: { fontSize: 11, fontWeight: '700', color: colors.sub },

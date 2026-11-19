@@ -38,6 +38,12 @@ export const games = sqliteTable('games', {
   currentPeriod: integer('current_period').notNull().default(1),
   createdAt: integer('created_at').notNull(),
   finishedAt: integer('finished_at'),
+  /** 時計を使っているピリオド。null、または現在のピリオドと違えば、そのピリオドでは未使用 */
+  clockPeriod: integer('clock_period'),
+  /** 最後に止めた（または動かし始めた）時点の残り時間（ミリ秒） */
+  clockRemainingMs: integer('clock_remaining_ms'),
+  /** 動いているときの開始時刻（端末の時刻、ミリ秒）。止まっていれば null */
+  clockStartedAt: integer('clock_started_at'),
 });
 
 /** 背番号と氏名は試合時点のスナップショット。選手マスタを後から変えても過去の記録は変わらない */

@@ -2,21 +2,31 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 import { db } from '@/db/client';
 import {
+  TEAM_EVENT_TYPES,
   addEvent,
   addRosterEntry,
   deleteGame,
   endPeriod,
   isPeriodEnded,
+  resetClock,
+  setClock,
   setLastTwoMinutes,
+  startClock,
+  stopClock,
   substitute,
+  toggleMark,
   undoLastEvent,
+  deletePracticeGame,
 } from '@/db/repo';
+import { clockSeconds, clockStamp, clockToDigits, isClockRunning, isClockUsed } from '@/domain/clock';
+import { PRACTICE_GAME_ID, practiceStep } from '@/domain/practice';
 import { ON_COURT_MAX, clockDigitsLabel, parseClockDigits, periodSeconds } from '@/domain/lineup';
 import { RULES, activeEvents, periodLabel } from '@/domain/rules';
 import { deriveGameState, describeEvent, type PlayerState, type TeamState } from '@/domain/stats';
@@ -30,13 +40,17 @@ import {
 import { Button, Chip, Row } from '@/ui/components';
 import { DEFAULT_FT, EventLogSheet } from '@/ui/EventLogSheet';
 import { FoulBoard } from '@/ui/FoulBoard';
+import { GameClock } from '@/ui/GameClock';
+import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { Text } from '@/ui/Text';
 import { colors, radius, sideBg, sideColor } from '@/ui/theme';
 import { TopSheet } from '@/ui/TopSheet';
 import { attempt, useGame } from '@/ui/useGame';
 import { DialogHost, showDialog } from '@/ui/dialog';
 
+/** 選手ではなく「チーム」を選んだ状態。チームのTOV・リバウンドと、ベンチのファウル（C・B）を記録する */
 const BENCH = 'bench';
+const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'];
 type Selection = { side: Side; rosterId: string };
 
 const GRID_COLUMNS = 3;
@@ -78,6 +92,18 @@ const ACTIONS: ActionCell[][] = [
   ],
 ];
 
+type ClockGame = Parameters<typeof clockStamp>[0] & Parameters<typeof clockStamp>[2];
+
+/** いまの残り秒（記録に付ける値）。時計を使っていないピリオドでは null */
+function stampNow(game: ClockGame, period: number): number | null {
+  return clockStamp(game, period, game, Date.now());
+}
+
+/** いまの残り時間を、テンキーの初期値にする。時計を使っていなければ空 */
+function clockDigitsNow(game: ClockGame, period: number): string {
+  return isClockUsed(game, period) ? clockToDigits(clockSeconds(game, period, game, Date.now())) : '';
+}
+
 const STATUS_TEXT = { fouledOut: '退場', disqualified: '失格' } as const;
 
 export default function LiveScreen() {
@@ -94,18 +120,46 @@ export default function LiveScreen() {
   // 試合中の背番号追加（開始時に相手の番号が全員分かっていない場合のため）
   const [adding, setAdding] = useState<{ side: Side; number: string } | null>(null);
   // 交代シート：交代後にコート上にいる選手と、残り時間（テンキーの数字。空なら時刻なし）
-  const [subSheet, setSubSheet] = useState<{ side: Side; court: string[]; clock: string } | null>(null);
+  // clockAuto は、残り時間が時計から自動で入った状態（最初のキーで入れ直しになる）
+  const [subSheet, setSubSheet] = useState<{ side: Side; court: string[]; clock: string; clockAuto?: boolean } | null>(
+    null,
+  );
+  // ランニングスコア（オフィシャルの記録とのすり合わせ用に、いつでも開ける）
+  const [scoreOpen, setScoreOpen] = useState(false);
+  // 時計を直すシート（テンキーの数字。null なら閉じている）
+  const [clockEdit, setClockEdit] = useState<string | null>(null);
+  // シートを開いた時点の残り時間（見出しに出す）
+  const [clockAtOpen, setClockAtOpen] = useState('');
+  // 記録できなかった理由など、一時的に知らせる文言（次の操作で消える）
+  const [notice, setNotice] = useState<string | null>(null);
+  const { height } = useWindowDimensions();
+
+  // 練習用の試合では、次に押す場所を1つずつ案内する
+  const practice = gameId === PRACTICE_GAME_ID;
+  const [practiceFlags, setPracticeFlags] = useState({ foulSheetUsed: false, foulsViewed: false });
+  const step = practice && bundle ? practiceStep(bundle.events, selected?.side ?? null, practiceFlags) : null;
 
   const period = bundle?.game.currentPeriod ?? 1;
   const state = useMemo(
     () => (bundle ? deriveGameState(bundle.events, bundle.roster, period) : null),
     [bundle, period],
   );
+  const scoreHtml = useMemo(() => (bundle && scoreOpen ? buildRunningScoreHtml(bundle) : ''), [bundle, scoreOpen]);
+  const marks = useMemo(
+    () => (bundle ? bundle.events.filter((e) => e.voidedAt === null && e.type === 'MARK').length : 0),
+    [bundle],
+  );
+  // 残り0になったら止める（時計の部品から呼ばれる）
+  const expireClock = useCallback(() => {
+    stopClock(db, gameId);
+    reload();
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  }, [gameId, reload]);
   const recent = useMemo(
     () =>
       bundle
         ? activeEvents(bundle.events)
-            .filter((e) => e.type !== 'L2M')
+            .filter((e) => e.type !== 'L2M' && e.type !== 'MARK')
             .slice(-4)
             .reverse()
             .map((e) => describeEvent(e, bundle.roster))
@@ -125,6 +179,8 @@ export default function LiveScreen() {
   if (!bundle || !state || status !== 'live' || ended) return <View style={styles.screen} />;
   const { game } = bundle;
   const isBench = selected?.rosterId === BENCH;
+  // 時計を使っているピリオドでは、記録に残り時間を付ける
+  const stamp = () => stampNow(game, period);
 
   const record = (type: EventType, foul?: { kind: FoulKind; ft: number }) => {
     if (!selected) return;
@@ -137,6 +193,7 @@ export default function LiveScreen() {
         type,
         foulKind: foul?.kind,
         ftAwarded: foul?.ft,
+        clockSeconds: stamp(),
       }),
     );
     // 書き込み完了後に画面へ反映する
@@ -170,7 +227,7 @@ export default function LiveScreen() {
         text: '記録する',
         onPress: () => {
           const ok = attempt(() =>
-            addEvent(db, { gameId, period, side, rosterId: null, type: 'TIMEOUT' }),
+            addEvent(db, { gameId, period, side, rosterId: null, type: 'TIMEOUT', clockSeconds: stamp() }),
           );
           reload();
           if (ok) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -200,8 +257,52 @@ export default function LiveScreen() {
     }
   };
 
+  // 印を付ける。「今の何番だった？」というときに押しておき、あとでログから見直す
+  const mark = () => {
+    const added = toggleMark(db, { gameId, period, clockSeconds: stamp() });
+    reload();
+    setNotice(added ? '印を付けました（あとで「ログ」から見直せます）' : '印を外しました');
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const toggleClock = () => {
+    if (isClockRunning(game, period)) stopClock(db, gameId);
+    else startClock(db, gameId);
+    reload();
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  // 合わせるときは数字を入れ直すので、空から始める（いまの時間は見出しに出す）
+  const openClockEdit = () => {
+    setClockAtOpen(clockDigitsNow(game, period));
+    setClockEdit('');
+  };
+
+  const confirmClock = () => {
+    if (clockEdit === null) return;
+    const seconds = parseClockDigits(clockEdit, periodSeconds(period, game));
+    if (seconds === undefined || seconds === null) return;
+    const ok = attempt(() => setClock(db, gameId, seconds));
+    reload();
+    if (ok) setClockEdit(null);
+  };
+
+  const quitPractice = () => {
+    deletePracticeGame(db);
+    router.replace('/');
+  };
+
+  const skipPractice = () =>
+    showDialog('練習をスキップしますか？', '「設定 → 使い方」から、いつでもやり直せます。', [
+      { text: '続ける', style: 'cancel' },
+      { text: 'スキップする', onPress: quitPractice },
+    ]);
+
   const menu = () =>
-    showDialog('メニュー', undefined, [
+    practice
+      ? skipPractice()
+      : showDialog('メニュー', undefined, [
+      { text: '時計を合わせる', onPress: openClockEdit },
       { text: '試合情報・出場登録を編集', onPress: () => router.push(`/games/${gameId}/prep`) },
       {
         text: 'ホームに戻る（試合は続行）',
@@ -223,8 +324,8 @@ export default function LiveScreen() {
             },
           ]),
       },
-      { text: 'キャンセル', style: 'cancel' },
-    ]);
+          { text: 'キャンセル', style: 'cancel' },
+        ]);
 
   const confirmSub = () => {
     if (!subSheet) return;
@@ -254,6 +355,7 @@ export default function LiveScreen() {
 
   const select = (side: Side, rosterId: string) => {
     void Haptics.selectionAsync();
+    setNotice(null);
     setSelected((cur) => (cur?.side === side && cur.rosterId === rosterId ? null : { side, rosterId }));
   };
 
@@ -269,8 +371,18 @@ export default function LiveScreen() {
         accessibilityRole="button"
         accessibilityLabel={`${side} ${p.roster.number}番`}
         accessibilityState={{ selected: active, disabled: out }}
+        accessibilityHint={benched ? 'コートに出ていない選手です。長押しで選べます' : undefined}
         disabled={out}
-        onPress={() => select(side, p.roster.id)}
+        // 交代を記録しているチームでは、コートに出ていない選手は誤タップで選ばれないようにする。
+        // ベンチの選手に記録が必要なとき（失格など）は、長押しで選べる
+        onPress={() => {
+          if (!benched || active) return select(side, p.roster.id);
+          setSelected(null);
+          setNotice(`${side} #${p.roster.number} はベンチです（記録するなら長押し）`);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        }}
+        onLongPress={benched ? () => select(side, p.roster.id) : undefined}
+        delayLongPress={350}
         style={[
           styles.cell,
           styles.player,
@@ -279,6 +391,7 @@ export default function LiveScreen() {
           benched && styles.cellBenched,
           active && { backgroundColor: sideColor(side), borderColor: sideColor(side), opacity: 1 },
           out && styles.cellOut,
+          !active && (step?.target === 'anyPlayer' || (step?.target === 'playerA' && side === 'A')) && styles.hint,
         ]}
       >
         <Text
@@ -352,20 +465,24 @@ export default function LiveScreen() {
         <View style={styles.teamButtons}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${side} ベンチ`}
+            accessibilityLabel={`${side} チーム`}
+            accessibilityHint="チームのターンオーバー・リバウンドと、ベンチのファウルを記録する"
             accessibilityState={{ selected: benchActive }}
             onPress={() => select(side, BENCH)}
             style={[styles.teamButton, benchActive && { backgroundColor: sideColor(side) }]}
           >
-            <Text
-              style={[
-                styles.teamButtonText,
-                team.coach.disqualified && { color: colors.danger },
-                benchActive && { color: colors.primaryText },
-              ]}
-            >
-              {team.coach.disqualified ? 'HC失格' : benchFouls > 0 ? `ベンチ F${benchFouls}` : 'ベンチ'}
-            </Text>
+            <Text style={[styles.teamButtonText, benchActive && { color: colors.primaryText }]}>チーム</Text>
+            {(team.coach.disqualified || benchFouls > 0) && (
+              <Text
+                style={[
+                  styles.teamButtonSub,
+                  team.coach.disqualified && { color: colors.danger },
+                  benchActive && { color: colors.primaryText },
+                ]}
+              >
+                {team.coach.disqualified ? 'HC失格' : `ベンチF${benchFouls}`}
+              </Text>
+            )}
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -374,7 +491,9 @@ export default function LiveScreen() {
               setSubSheet({
                 side,
                 court: team.players.filter((p) => p.onCourt).map((p) => p.roster.id),
-                clock: '',
+                // 時計を使っていれば、いまの残り時間を入れておく（直せる）
+                clock: clockDigitsNow(game, period),
+                clockAuto: true,
               })
             }
             style={[styles.teamButton, { backgroundColor: sideBg(side) }]}
@@ -410,7 +529,13 @@ export default function LiveScreen() {
           onPress={onFoulPress}
           onLongPress={openFoulSheet}
           delayLongPress={350}
-          style={({ pressed }) => [styles.cell, styles.foul, !selected && styles.actionDisabled, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.cell,
+            styles.foul,
+            !selected && styles.actionDisabled,
+            step?.target === 'foul' && styles.hint,
+            pressed && styles.pressed,
+          ]}
         >
           <Text style={styles.foulText}>FOUL</Text>
           <Text style={styles.foulHint} numberOfLines={1}>
@@ -432,6 +557,7 @@ export default function LiveScreen() {
             styles.cell,
             { backgroundColor: sideBg(cell.side), borderColor: sideBg(cell.side) },
             left === 0 && styles.actionDisabled,
+            step?.target === 'timeout' && styles.hint,
             pressed && styles.pressed,
           ]}
         >
@@ -442,7 +568,8 @@ export default function LiveScreen() {
         </Pressable>
       );
     }
-    const disabled = !selected || isBench;
+    // チームを選んでいるときは、チームのTOV・リバウンドだけ押せる
+    const disabled = !selected || (isBench && !TEAM_EVENT_TYPES.includes(cell.type));
     return (
       <Pressable
         key={cell.type}
@@ -456,6 +583,7 @@ export default function LiveScreen() {
           cell.tone === 'made' && styles.actionMade,
           cell.tone === 'miss' && styles.actionMiss,
           disabled && styles.actionDisabled,
+          step?.target === 'made2' && cell.type === 'FG2_MADE' && styles.hint,
           pressed && styles.pressed,
         ]}
       >
@@ -475,37 +603,70 @@ export default function LiveScreen() {
 
   const selectedLabel = selected
     ? `${selected.side} ${
-        isBench ? 'ベンチ' : `#${bundle.roster.find((r) => r.id === selected.rosterId)?.number ?? '?'}`
+        isBench ? 'チーム' : `#${bundle.roster.find((r) => r.id === selected.rosterId)?.number ?? '?'}`
       }`
     : '選手を選択';
+  const clockEditError =
+    clockEdit !== null && clockEdit !== '' && parseClockDigits(clockEdit, periodLength) === undefined
+      ? Number(clockEdit.slice(-2)) >= 60
+        ? '秒は00〜59で入力してください'
+        : `残り時間は ${clockDigitsLabel(String(periodLength / 60) + '00')} までです`
+      : null;
   const pad = { paddingLeft: insets.left + 10, paddingRight: insets.right + 10 };
 
   return (
     <View style={styles.screen}>
       <View style={[styles.top, pad, { paddingTop: insets.top }]}>
         <View style={[styles.sideBar, { backgroundColor: colors.teamAOnInk }]} />
-        <Text style={styles.topName} numberOfLines={1}>
+        {/* チーム名のタップでも「チーム」を選べる（背番号と同じ感覚で、チームのTOV・リバウンドを付ける） */}
+        <Text
+          accessibilityRole="button"
+          accessibilityLabel={`A ${teamName('A')} チームを選ぶ`}
+          onPress={() => select('A', BENCH)}
+          suppressHighlighting
+          style={styles.topName}
+          numberOfLines={1}
+        >
           {teamName('A')}
         </Text>
         <Text num style={styles.topScore}>
           {state.A.score}
         </Text>
-        <Text style={styles.topPeriod}>{periodLabel(period)}</Text>
+        <GameClock game={game} period={period} onToggle={toggleClock} onEdit={openClockEdit} onExpire={expireClock} />
         <Text num style={styles.topScore}>
           {state.B.score}
         </Text>
-        <Text style={[styles.topName, styles.textRight]} numberOfLines={1}>
+        <Text
+          accessibilityRole="button"
+          accessibilityLabel={`B ${teamName('B')} チームを選ぶ`}
+          onPress={() => select('B', BENCH)}
+          suppressHighlighting
+          style={[styles.topName, styles.textRight]}
+          numberOfLines={1}
+        >
           {teamName('B')}
         </Text>
         <View style={[styles.sideBar, { backgroundColor: colors.teamBOnInk }]} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="ファウル状況"
-          onPress={() => setFoulsOpen(true)}
+          onPress={() => {
+            setFoulsOpen(true);
+            if (practice) setPracticeFlags((f) => ({ ...f, foulsViewed: true }));
+          }}
+          hitSlop={6}
+          style={[styles.foulsButton, step?.target === 'fouls' && styles.hintOnInk]}
+        >
+          <Text style={styles.foulsButtonText}>ファウル状況</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ランニングスコア"
+          onPress={() => setScoreOpen(true)}
           hitSlop={6}
           style={styles.foulsButton}
         >
-          <Text style={styles.foulsButtonText}>ファウル状況</Text>
+          <Text style={styles.foulsButtonText}>スコア</Text>
         </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="メニュー" onPress={menu} hitSlop={8} style={styles.menu}>
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.primaryText} />
@@ -518,16 +679,52 @@ export default function LiveScreen() {
         <View style={styles.center}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="記録ログを開く"
-            onPress={() => setLogOpen(true)}
-            style={[styles.strip, selected && { backgroundColor: sideBg(selected.side) }]}
+            accessibilityLabel={step ? `練習 ${step.index}/${step.total} ${step.text}` : '記録ログを開く'}
+            onPress={() => {
+              if (!step) setLogOpen(true);
+            }}
+            style={[
+              styles.strip,
+              selected && { backgroundColor: sideBg(selected.side) },
+              step && styles.stripPractice,
+            ]}
           >
-            <Text style={[styles.stripMain, !selected && { color: colors.sub }]} numberOfLines={1}>
-              {selected ? `${selectedLabel} の記録をえらぶ` : '選手をタップ'}
-            </Text>
-            <Text style={styles.stripRecent} numberOfLines={1}>
-              {recent.length ? `直前：${recent[0]}` : '記録なし'}
-            </Text>
+            {step ? (
+              <>
+                <Text style={styles.stripStep}>
+                  練習 {step.index}/{step.total}
+                </Text>
+                <Text style={[styles.stripMain, styles.stripGuide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                  {step.text}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="練習をスキップ"
+                  onPress={skipPractice}
+                  hitSlop={10}
+                  style={styles.stripSkip}
+                >
+                  <Text style={styles.stripSkipText}>スキップ</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                {notice && !selected ? (
+                  <Text style={[styles.stripMain, styles.stripNotice]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                    {notice}
+                  </Text>
+                ) : (
+                  <>
+                    <Text style={[styles.stripMain, !selected && { color: colors.sub }]} numberOfLines={1}>
+                      {selected ? `${selectedLabel} の記録をえらぶ` : '選手をタップ'}
+                    </Text>
+                    <Text style={styles.stripRecent} numberOfLines={1}>
+                      {recent.length ? `直前：${recent[0]}` : '記録なし'}
+                    </Text>
+                  </>
+                )}
+              </>
+            )}
           </Pressable>
 
           {ACTIONS.map((row, r) => (
@@ -537,17 +734,46 @@ export default function LiveScreen() {
           ))}
 
           <View style={styles.utilRow}>
-            <Pressable accessibilityRole="button" accessibilityLabel="UNDO" onPress={undo} style={[styles.util, styles.undo]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="UNDO"
+              onPress={undo}
+              style={[styles.util, styles.undo, step?.target === 'undo' && styles.utilHint]}
+            >
               <Ionicons name="arrow-undo" size={16} color={colors.warn} />
-              <Text style={[styles.utilText, { color: colors.warn }]}>取り消す</Text>
+              <Text style={[styles.utilText, styles.utilShrink, { color: colors.warn }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                取り消す
+              </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="ログ"
+              accessibilityLabel="印を付ける"
+              accessibilityHint="あとで見直したい場面に印を付ける。続けて押すと外す"
+              onPress={mark}
+              // 第4Qは「残り2分」が並んで狭くなるので、旗だけにして幅をゆずる
+              style={[styles.util, period === RULES.regulationPeriods && styles.utilNarrow]}
+            >
+              <Ionicons name="flag" size={14} color={colors.accentInk} />
+              {period !== RULES.regulationPeriods && (
+                <Text style={styles.utilText} numberOfLines={1}>
+                  印
+                </Text>
+              )}
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={marks > 0 ? `ログ 印${marks}件` : 'ログ'}
               onPress={() => setLogOpen(true)}
               style={styles.util}
             >
-              <Text style={styles.utilText}>ログ</Text>
+              <Text style={styles.utilText} numberOfLines={1}>
+                ログ
+              </Text>
+              {marks > 0 && (
+                <Text num style={styles.markCount}>
+                  {marks}
+                </Text>
+              )}
             </Pressable>
             {period === RULES.regulationPeriods && (
               <Pressable
@@ -567,7 +793,7 @@ export default function LiveScreen() {
               accessibilityRole="button"
               accessibilityLabel="Q終了"
               onPress={finishPeriod}
-              style={[styles.util, { backgroundColor: colors.accent }]}
+              style={[styles.util, { backgroundColor: colors.accent }, step?.target === 'endPeriod' && styles.utilHint]}
             >
               <Text style={styles.utilText}>{periodLabel(period)} 終了</Text>
             </Pressable>
@@ -586,7 +812,7 @@ export default function LiveScreen() {
       >
         <Pressable style={styles.backdrop} onPress={() => setFoulSheet(null)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
-            <Text style={styles.sheetTitle}>{selectedLabel} のファウル</Text>
+            <Text style={styles.sheetTitle}>{isBench ? `${selected?.side} ベンチ` : selectedLabel} のファウル</Text>
             <Row>
               <Text style={styles.sheetLabel}>種類</Text>
               {(isBench ? BENCH_FOUL_KINDS : PLAYER_FOUL_KINDS).map((k) => (
@@ -620,6 +846,7 @@ export default function LiveScreen() {
                   const foul = foulSheet;
                   setFoulSheet(null);
                   if (foul) record('FOUL', foul);
+                  if (practice) setPracticeFlags((f) => ({ ...f, foulSheetUsed: true }));
                 }}
               />
             </Row>
@@ -644,7 +871,7 @@ export default function LiveScreen() {
               <Text num style={styles.padDisplay}>{adding?.number || '–'}</Text>
             </Row>
             <View style={styles.padGrid}>
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'].map((k) => (
+              {KEYPAD.map((k) => (
                 <Pressable
                   key={k}
                   accessibilityRole="button"
@@ -725,7 +952,7 @@ export default function LiveScreen() {
                 <Text style={styles.sheetLabel}>残り</Text>
                 <Text num style={styles.subClock}>{clockDigitsLabel(subSheet.clock)}</Text>
                 <View style={[styles.padGrid, styles.flex]}>
-                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'].map((k) => (
+                  {KEYPAD.map((k) => (
                     <Pressable
                       key={k}
                       accessibilityRole="button"
@@ -735,7 +962,11 @@ export default function LiveScreen() {
                           cur
                             ? {
                                 ...cur,
-                                clock: k === '⌫' ? cur.clock.slice(0, -1) : (cur.clock + k).slice(0, 4),
+                                clockAuto: false,
+                                clock:
+                                  k === '⌫'
+                                    ? cur.clock.slice(0, -1)
+                                    : ((cur.clockAuto ? '' : cur.clock) + k).slice(0, 4),
                               }
                             : cur,
                         )
@@ -751,7 +982,7 @@ export default function LiveScreen() {
                 <Text style={[styles.subHint, styles.subError]}>{subClockError}</Text>
               ) : (
                 <Text style={styles.subHint}>
-                  残り時間は任意です（例：6分32秒 → 632）。入れると出場時間が正確になります。Qの切れ目の交代は入れなくても正確です。
+                  残り時間は任意です（例：6分32秒 → 632）。時計を動かしていれば自動で入ります。Qの切れ目の交代は入れなくても正確です。
                 </Text>
               )}
               <Row>
@@ -769,6 +1000,62 @@ export default function LiveScreen() {
         <DialogHost />
       </Modal>
 
+      <Modal
+        visible={clockEdit !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setClockEdit(null)}
+        supportedOrientations={['landscape', 'portrait']}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setClockEdit(null)}>
+          <Pressable style={styles.padSheet} onPress={() => undefined}>
+            <Row>
+              <Text style={[styles.sheetTitle, styles.flex]} numberOfLines={1}>
+                {periodLabel(period)} 残り時間{clockAtOpen !== '' ? `（いま ${clockDigitsLabel(clockAtOpen)}）` : ''}
+              </Text>
+              <Text num style={styles.clockDisplay}>{clockDigitsLabel(clockEdit ?? '')}</Text>
+            </Row>
+            <View style={styles.padGrid}>
+              {KEYPAD.map((k) => (
+                <Pressable
+                  key={k}
+                  accessibilityRole="button"
+                  accessibilityLabel={k === '⌫' ? '1文字消す' : `残り時間 ${k}`}
+                  onPress={() =>
+                    setClockEdit((cur) => (cur === null ? cur : k === '⌫' ? cur.slice(0, -1) : (cur + k).slice(0, 4)))
+                  }
+                  style={({ pressed }) => [styles.padKey, pressed && styles.pressed]}
+                >
+                  <Text num style={styles.padKeyText}>{k}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={[styles.subHint, clockEditError !== null && styles.subError]}>
+              {clockEditError ?? '会場の時計に合わせます（例：6分32秒 → 632）。上の時計はタップで動く・止まる、長押しでこの画面が開きます。'}
+            </Text>
+            <Row>
+              <Button
+                title="使わない"
+                variant="ghost"
+                onPress={() => {
+                  resetClock(db, gameId);
+                  reload();
+                  setClockEdit(null);
+                }}
+              />
+              <Button title="キャンセル" variant="secondary" onPress={() => setClockEdit(null)} style={styles.flex} />
+              <Button
+                title="合わせる"
+                disabled={!clockEdit || clockEditError !== null}
+                onPress={confirmClock}
+                style={styles.flex}
+              />
+            </Row>
+          </Pressable>
+        </Pressable>
+        <DialogHost />
+      </Modal>
+
       <EventLogSheet visible={logOpen} bundle={bundle} onClose={() => setLogOpen(false)} onChanged={reload} />
 
       <TopSheet visible={foulsOpen} title="ファウル状況" onClose={() => setFoulsOpen(false)}>
@@ -778,6 +1065,12 @@ export default function LiveScreen() {
           events={bundle.events}
           period={period}
         />
+      </TopSheet>
+
+      <TopSheet visible={scoreOpen} title="ランニングスコア（現在まで）" onClose={() => setScoreOpen(false)}>
+        <View style={[styles.scoreSheet, { height: height - 130 }]}>
+          {scoreOpen && <WebView originWhitelist={['*']} source={{ html: scoreHtml }} style={styles.webview} />}
+        </View>
       </TopSheet>
     </View>
   );
@@ -792,23 +1085,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     paddingBottom: 2,
   },
   sideBar: { width: 8, height: 26, borderRadius: 4 },
   topName: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '800', color: colors.primaryText },
   textRight: { textAlign: 'right' },
   topScore: { fontSize: 38, lineHeight: 44, minWidth: 44, textAlign: 'center', color: colors.primaryText },
-  topPeriod: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: colors.accentText,
-    backgroundColor: colors.accent,
-    paddingHorizontal: 12,
-    paddingVertical: 2,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
   foulsButton: { height: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: colors.inkSoft, justifyContent: 'center' },
   foulsButtonText: { fontSize: 12, fontWeight: '800', color: colors.primaryText },
   menu: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.inkSoft, alignItems: 'center', justifyContent: 'center' },
@@ -824,6 +1107,7 @@ const styles = StyleSheet.create({
   teamButtons: { height: 38, flexDirection: 'row', gap: GAP },
   teamButton: { flex: 1, borderRadius: 12, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
   teamButtonText: { fontSize: 13, fontWeight: '800', color: colors.text },
+  teamButtonSub: { fontSize: 9, fontWeight: '800', color: colors.sub },
   strip: {
     height: 34,
     borderRadius: 12,
@@ -834,6 +1118,38 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stripMain: { fontSize: 14, fontWeight: '800', color: colors.text },
+  // 練習の案内。次に押す場所は、同じ色の太い枠で示す
+  stripPractice: { backgroundColor: colors.accent },
+  stripStep: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primaryText,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  stripGuide: { flex: 1, minWidth: 0, color: colors.accentText },
+  stripSkip: { paddingHorizontal: 6, paddingVertical: 4 },
+  stripSkipText: { fontSize: 12, fontWeight: '800', color: colors.accentText, textDecorationLine: 'underline' },
+  hint: { borderColor: colors.accent, borderWidth: 4 },
+  hintOnInk: { borderColor: colors.accent, borderWidth: 3 },
+  utilHint: { borderColor: colors.primary, borderWidth: 3 },
+  stripNotice: { flex: 1, minWidth: 0, color: colors.warn },
+  markCount: {
+    minWidth: 18,
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.accentText,
+    backgroundColor: colors.accent,
+    borderRadius: 9,
+    overflow: 'hidden',
+  },
+  scoreSheet: { borderRadius: 12, overflow: 'hidden', backgroundColor: colors.card },
+  webview: { flex: 1, backgroundColor: colors.card },
+  clockDisplay: { minWidth: 96, textAlign: 'center', fontSize: 34, color: colors.text },
   stripRecent: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 12, fontWeight: '700', color: colors.mute },
   utilRow: { height: 40, flexDirection: 'row', gap: GAP },
   util: {
@@ -845,6 +1161,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
+  utilNarrow: { flex: 0.5 },
+  utilShrink: { flexShrink: 1 },
   utilText: { fontSize: 13, fontWeight: '800', color: colors.text },
   undo: { backgroundColor: colors.warnBg },
   toSide: { fontSize: 10, fontWeight: '800' },

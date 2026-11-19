@@ -16,12 +16,14 @@ import {
   type StatMode,
   type TeamAnalysis,
 } from '@/domain/analysis';
+import { formatClock } from '@/domain/lineup';
 import { periodLabel } from '@/domain/rules';
 import { sharePdf } from '@/lib/share';
 import { buildFullReportHtml, buildPlayersReportHtml, buildTeamReportHtml } from '@/output/analysisHtml';
 import { GroupedBars, Legend, Meter } from '@/ui/charts';
 import { Button, Card, Chip, Row, SectionTitle, Segmented } from '@/ui/components';
 import { showDialog } from '@/ui/dialog';
+import { HelpButton } from '@/ui/HelpButton';
 import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
@@ -43,6 +45,10 @@ const MODES: { value: StatMode; label: string }[] = [
   { value: 'avg', label: '1試合平均' },
   { value: 'total', label: '合計' },
 ];
+// 40分換算は選手の比較にだけ出す（チームは1試合がほぼ40分なので、平均と変わらない）
+const PLAYER_MODES: { value: StatMode; label: string }[] = [...MODES, { value: 'per40', label: '40分換算' }];
+/** 5人の組み合わせを出す行数 */
+const UNIT_ROWS = 8;
 const SHOTS = [
   { label: '2点', made: 'fg2m', att: 'fg2a' },
   { label: '3点', made: 'fg3m', att: 'fg3a' },
@@ -61,6 +67,8 @@ export default function AnalysisScreen() {
   const [axis, setAxis] = useState<Axis>('team');
   const [range, setRange] = useState<DateRange>('all');
   const [mode, setMode] = useState<StatMode>('avg');
+  // チームの画面には40分換算が無いので、選手の画面で選んでいたら1試合平均で見せる
+  const teamMode: StatMode = mode === 'per40' ? 'avg' : mode;
   const [sortKey, setSortKey] = useState('pts');
   const [shareOpen, setShareOpen] = useState(false);
   const analysis = useAnalysis(range);
@@ -104,6 +112,7 @@ export default function AnalysisScreen() {
     >
       <Row>
         <Text style={[styles.title, styles.flex]}>分析</Text>
+        <HelpButton topic="analysis" />
         {analysis.games > 0 && <Button title={exporting ? '出力中…' : '共有'} small variant="secondary" disabled={exporting} onPress={shareMenu} />}
       </Row>
       <Segmented
@@ -132,10 +141,15 @@ export default function AnalysisScreen() {
           <Row>
             <Text style={styles.count}>{analysis.games}試合の成績</Text>
             <View style={styles.flex} />
-            <Segmented options={MODES} value={mode} onChange={setMode} style={styles.modes} />
+            <Segmented
+              options={axis === 'players' ? PLAYER_MODES : MODES}
+              value={axis === 'players' ? mode : teamMode}
+              onChange={setMode}
+              style={axis === 'players' ? styles.modesWide : styles.modes}
+            />
           </Row>
           {axis === 'team' ? (
-            <TeamView key={range} analysis={analysis} mode={mode} />
+            <TeamView key={range} analysis={analysis} mode={teamMode} />
           ) : (
             <PlayersView analysis={analysis} mode={mode} range={range} sortKey={sortKey} onSort={setSortKey} />
           )}
@@ -242,6 +256,80 @@ function TeamView({ analysis, mode }: { analysis: TeamAnalysis; mode: StatMode }
         />
       </Card>
 
+      <SectionTitle>時間帯別の平均得点</SectionTitle>
+      <Card>
+        {analysis.timedGames > 0 ? (
+          <>
+            <View style={styles.cardHead}>
+              <Text style={styles.cardNote}>時計を使った{analysis.timedGames}試合の平均</Text>
+              <Legend items={LEGEND} />
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.bands}>
+                <GroupedBars
+                  groups={analysis.bands.map((b) => ({
+                    key: b.key,
+                    label: b.label.replace(' 前半', '前').replace(' 後半', '後').replace(' 残り2分', '終盤'),
+                    own: Math.round((b.own / analysis.timedGames) * 10) / 10,
+                    opp: Math.round((b.opp / analysis.timedGames) * 10) / 10,
+                  }))}
+                  height={120}
+                  showValues
+                  format={(v) => (Number.isInteger(v) ? String(v) : one(v))}
+                />
+              </View>
+            </ScrollView>
+            <Text style={styles.cardNote}>各Qを前半・後半に分けた得点です。「Q4終盤」は残り2分（Q4後の内数）</Text>
+          </>
+        ) : (
+          <Text style={styles.cardNote}>
+            試合中に時計を動かすと、Qの前半・後半や終盤の得点がここに出ます（4つのQすべてで時計を使った試合が対象）
+          </Text>
+        )}
+      </Card>
+
+      <SectionTitle>5人の組み合わせ</SectionTitle>
+      <Card style={styles.table}>
+        {analysis.units.length > 0 ? (
+          <>
+            <View style={[styles.tr, styles.trHead]}>
+              <Text style={[styles.tdUnit, styles.th]}>コート上の5人</Text>
+              <Text style={[styles.tdSmall, styles.th]}>MIN</Text>
+              <Text style={[styles.tdSmall, styles.th]}>得点</Text>
+              <Text style={[styles.tdSmall, styles.th]}>失点</Text>
+              <Text style={[styles.tdSmall, styles.th]}>+/-</Text>
+            </View>
+            {analysis.units.slice(0, UNIT_ROWS).map((u) => {
+              const pm = u.pointsFor - u.pointsAgainst;
+              return (
+                <View key={u.key} style={styles.tr}>
+                  <Text num style={styles.tdUnit} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                    {u.numbers.map((no) => `#${no}`).join(' ')}
+                  </Text>
+                  <Text num style={styles.tdSmall}>
+                    {u.approximate ? '約' : ''}
+                    {formatClock(u.seconds)}
+                  </Text>
+                  <Text num style={styles.tdSmall}>{u.pointsFor}</Text>
+                  <Text num style={styles.tdSmall}>{u.pointsAgainst}</Text>
+                  <Text num style={[styles.tdSmall, styles.bold]}>
+                    {pm > 0 ? '+' : ''}
+                    {pm}
+                  </Text>
+                </View>
+              );
+            })}
+            <Text style={[styles.cardNote, styles.unitNote]}>
+              出場時間の長い順（期間の合計）。先発と交代を記録した試合の分です
+            </Text>
+          </>
+        ) : (
+          <Text style={[styles.cardNote, styles.unitNote]}>
+            先発を選んで交代を記録すると、どの5人のときに点差が開いたかがここに出ます
+          </Text>
+        )}
+      </Card>
+
       <SectionTitle>シュート成功率</SectionTitle>
       <Card>
         {SHOTS.map((s) => (
@@ -344,7 +432,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: '800', color: colors.text },
   label: { width: 34, fontSize: 12, fontWeight: '700', color: colors.sub },
   count: { fontSize: 13, fontWeight: '700', color: colors.sub },
+  bands: { minWidth: 560 },
+  tdUnit: { flex: 1, minWidth: 0, fontSize: 15, color: colors.text, paddingLeft: 12 },
+  tdSmall: { width: 52, textAlign: 'center', fontSize: 14, color: colors.text },
+  bold: { fontWeight: '800' },
+  unitNote: { padding: 12 },
   modes: { width: 190 },
+  modesWide: { width: 270 },
   empty: { color: colors.sub, fontSize: 14, paddingVertical: 12 },
   chips: { flexGrow: 0 },
   tiles: { flexDirection: 'row', gap: 10 },

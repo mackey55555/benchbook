@@ -4,7 +4,8 @@ import path from 'node:path';
 
 import { computeScore, remainingTimeouts } from '@/domain/rules';
 import { computeLineupStats, onCourtIds } from '@/domain/lineup';
-import { buildRunningScore } from '@/domain/stats';
+import { clockSeconds, isClockRunning, isClockUsed } from '@/domain/clock';
+import { buildBoxScore, buildRunningScore, describeEvent, teamOnlyLine } from '@/domain/stats';
 
 import {
   RepoError,
@@ -15,6 +16,8 @@ import {
   cancelPeriodEnd,
   confirmPeriod,
   createGame,
+  createPracticeGame,
+  deletePracticeGame,
   createTeam,
   deleteGame,
   endPeriod,
@@ -30,7 +33,12 @@ import {
   recordMismatch,
   removeRosterEntry,
   replaceEvent,
+  resetClock,
   saveRosterAsTeam,
+  setClock,
+  startClock,
+  stopClock,
+  toggleMark,
   setLastTwoMinutes,
   setOwnSide,
   setStarter,
@@ -42,6 +50,7 @@ import {
   voidEvent,
   type Db,
 } from '../repo';
+import { exportAll } from '../backup';
 import { openTestDb } from './testDb';
 
 function setupGame(db: Db) {
@@ -550,5 +559,160 @@ describe('選手別の修正表（adjustStat）', () => {
     ]);
     adjustStat(db, { gameId: game.id, period: 1, side: 'A', rosterId: four, type: 'FOUL', delta: -1 });
     expect(active().map((e) => e.foulKind)).toEqual(['P']);
+  });
+});
+
+describe('練習用の試合', () => {
+  it('入力できる状態で作られ、一覧・再開・バックアップの対象にならない', () => {
+    const { db } = openTestDb();
+    const practice = createPracticeGame(db);
+    expect(practice.status).toBe('live');
+    expect(listRoster(db, practice.id).map((r) => `${r.side}${r.number}`)).toHaveLength(10);
+    expect(listGames(db)).toHaveLength(0);
+    expect(getLiveGame(db)).toBeUndefined();
+    expect(exportAll(db).games).toHaveLength(0);
+    expect(exportAll(db).gameRoster).toHaveLength(0);
+  });
+
+  it('練習中でも本番の試合を始められ、作り直すと前の練習の記録は消える', () => {
+    const { db } = openTestDb();
+    const practice = createPracticeGame(db);
+    const a4 = listRoster(db, practice.id).find((r) => r.side === 'A' && r.number === '4')!;
+    addEvent(db, { gameId: practice.id, period: 1, side: 'A', rosterId: a4.id, type: 'FG2_MADE' });
+    const { game } = setupGame(db);
+    expect(getLiveGame(db)?.id).toBe(game.id);
+    createPracticeGame(db);
+    expect(listEvents(db, practice.id)).toHaveLength(0);
+    deletePracticeGame(db);
+    expect(getGame(db, practice.id)).toBeUndefined();
+    expect(getGame(db, game.id)).toBeDefined();
+  });
+});
+
+describe('チームの記録（選手を選ばないTOV・リバウンド）', () => {
+  it('チームのTOV・リバウンドは合計に入り、選手の行には入らない', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: null, type: 'TOV' });
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: null, type: 'DREB' });
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: null, type: 'OREB' });
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'DREB' });
+    const bundle = getGameBundle(db, game.id)!;
+    const box = buildBoxScore(bundle.events, bundle.roster).A;
+    expect(box.total).toMatchObject({ tov: 1, oreb: 1, dreb: 2, reb: 3 });
+    expect(teamOnlyLine(box)).toMatchObject({ tov: 1, oreb: 1, dreb: 1, reb: 2, pts: 0 });
+    expect(box.players.reduce((n, p) => n + p.tov, 0)).toBe(0);
+    expect(describeEvent(bundle.events[0], bundle.roster)).toBe('A チーム TOV');
+  });
+
+  it('得点やアシストは、選手を選ばないと記録できない', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    for (const type of ['FG2_MADE', 'FT_MISS', 'AST', 'STL', 'BLK'] as const) {
+      expect(() => addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: null, type })).toThrow(RepoError);
+    }
+    expect(listEvents(db, game.id)).toHaveLength(0);
+  });
+
+  it('ベンチのファウル（C・B）は、これまでどおり記録できる', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    const e = addEvent(db, { gameId: game.id, period: 1, side: 'B', rosterId: null, type: 'FOUL', foulKind: 'B', ftAwarded: 1 });
+    expect(describeEvent(e, [])).toBe('B ベンチ F(B1)');
+  });
+});
+
+describe('印（MARK）', () => {
+  it('印は得点にも集計にも影響せず、続けて押すと外れる', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE' });
+    expect(toggleMark(db, { gameId: game.id, period: 1 })).toBe(true);
+    let events = listEvents(db, game.id);
+    expect(events.filter((e) => e.voidedAt === null && e.type === 'MARK')).toHaveLength(1);
+    expect(computeScore(events)).toEqual({ A: 2, B: 0 });
+    expect(buildRunningScore(events, listRoster(db, game.id)).A).toHaveLength(1);
+    expect(toggleMark(db, { gameId: game.id, period: 1 })).toBe(false);
+    events = listEvents(db, game.id);
+    expect(events.filter((e) => e.voidedAt === null && e.type === 'MARK')).toHaveLength(0);
+  });
+
+  it('取り消すは印を飛ばして、直前の記録を取り消す', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG3_MADE' });
+    toggleMark(db, { gameId: game.id, period: 1, clockSeconds: 392 });
+    expect(undoLastEvent(db, game.id, 1)?.type).toBe('FG3_MADE');
+    const active = listEvents(db, game.id).filter((e) => e.voidedAt === null);
+    expect(active.map((e) => e.type)).toEqual(['MARK']);
+    expect(describeEvent(active[0], [])).toBe('要確認の印 6:32');
+  });
+});
+
+describe('時計', () => {
+  const cfg = { periodMinutes: 10, otMinutes: 5 };
+
+  it('動かす・止める・合わせる', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    expect(isClockUsed(getGame(db, game.id)!, 1)).toBe(false);
+    startClock(db, game.id, 1_000);
+    expect(isClockRunning(getGame(db, game.id)!, 1)).toBe(true);
+    expect(clockSeconds(getGame(db, game.id)!, 1, cfg, 31_000)).toBe(570);
+    stopClock(db, game.id, 31_000);
+    expect(isClockRunning(getGame(db, game.id)!, 1)).toBe(false);
+    expect(clockSeconds(getGame(db, game.id)!, 1, cfg, 999_000)).toBe(570);
+    setClock(db, game.id, 392);
+    expect(clockSeconds(getGame(db, game.id)!, 1, cfg, 999_000)).toBe(392);
+    expect(isClockRunning(getGame(db, game.id)!, 1)).toBe(false);
+  });
+
+  it('動いている間に合わせると、その時間から動き続ける', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    startClock(db, game.id, 1_000);
+    setClock(db, game.id, 120, 50_000);
+    expect(isClockRunning(getGame(db, game.id)!, 1)).toBe(true);
+    expect(clockSeconds(getGame(db, game.id)!, 1, cfg, 60_000)).toBe(110);
+  });
+
+  it('ピリオドの長さを超える時間には合わせられない', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    expect(() => setClock(db, game.id, 601)).toThrow(RepoError);
+    expect(() => setClock(db, game.id, -1)).toThrow(RepoError);
+  });
+
+  it('Q終了で止まり、次のQは未使用（ピリオドの長さ）から始まる', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    startClock(db, game.id, 1_000);
+    endPeriod(db, game.id, 1);
+    expect(isClockRunning(getGame(db, game.id)!, 1)).toBe(false);
+    confirmPeriod(db, game.id, 1);
+    const next = getGame(db, game.id)!;
+    expect(next.currentPeriod).toBe(2);
+    expect(isClockUsed(next, 2)).toBe(false);
+    expect(clockSeconds(next, 2, cfg, 5_000_000)).toBe(600);
+  });
+
+  it('残り0の時計は動かない。「使わない」で未使用に戻る', () => {
+    const { db } = openTestDb();
+    const { game } = setupGame(db);
+    setClock(db, game.id, 0);
+    startClock(db, game.id, 1_000);
+    expect(isClockRunning(getGame(db, game.id)!, 1)).toBe(false);
+    resetClock(db, game.id);
+    expect(isClockUsed(getGame(db, game.id)!, 1)).toBe(false);
+  });
+
+  it('記録に渡した残り時間が保存され、修正しても引き継がれる', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    const e = addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE', clockSeconds: 392 });
+    expect(e.clockSeconds).toBe(392);
+    const fixed = replaceEvent(db, e.id, { rosterId: id('A', '5') });
+    expect(fixed.clockSeconds).toBe(392);
+    expect(describeEvent(fixed, listRoster(db, game.id))).toBe('A #5 2P○ 6:32');
   });
 });

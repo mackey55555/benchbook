@@ -9,9 +9,11 @@ import {
   type PlayerAnalysis,
   type StatLine,
   type StatColumn,
+  STAT_MODE_LABELS,
   type StatMode,
   type TeamAnalysis,
 } from '@/domain/analysis';
+import { formatClock } from '@/domain/lineup';
 import { periodLabel } from '@/domain/rules';
 import type { BoxScoreLine } from '@/domain/stats';
 
@@ -26,7 +28,7 @@ function esc(text: string): string {
 const OWN = '#3f51e0';
 const OPP = '#e0611b';
 const RESULT = { win: '勝', lose: '負', draw: '分' } as const;
-const MODE_LABEL: Record<StatMode, string> = { avg: '1試合平均', total: '合計' };
+const MODE_LABEL = STAT_MODE_LABELS;
 
 const CSS = `
 @page { size: A4 portrait; margin: 8mm; }
@@ -287,7 +289,7 @@ function cellClass(c: StatColumn, sortKey?: string): string {
 const STAT_LEGEND =
   'PTS：得点　3P／2P FG：3点／2点シュート　FT：フリースロー　M：成功　A：試投　%：成功率　F：ファウル　OR／DR／TR：オフェンス／ディフェンス／トータルリバウンド　TO：ターンオーバー　AS：アシスト　ST：スティール　BS：ブロック';
 const LINEUP_LEGEND =
-  '試合：出場登録された試合の数　MIN：出場時間　+/-：出場中の得失点差（MIN と +/- は、先発と交代を記録した試合の分だけを集計）';
+  '40分換算：出場時間のある試合の成績を、40分あたりに直した値（出場時間が5分未満の選手は出しません）　試合：出場登録された試合の数　MIN：出場時間　+/-：出場中の得失点差（MIN と +/- は、先発と交代を記録した試合の分だけを集計）';
 
 export interface ReportOptions {
   /** 期間の表示名（「今年度」など） */
@@ -301,12 +303,46 @@ export function buildTeamReportHtml(a: TeamAnalysis, o: ReportOptions): string {
   return page(sheet.title, [sheet]);
 }
 
+/** 時間帯別の平均得点と、5人の組み合わせ。どちらも対象の試合があるときだけ出す */
+function timeSections(a: TeamAnalysis): string {
+  const round = (v: number) => Math.round(v * 10) / 10;
+  const bands =
+    a.timedGames > 0
+      ? `<h2>時間帯別の平均得点（時計を使った${a.timedGames}試合）${LEGEND}</h2>
+<div class="box">${barChart(
+          a.bands.map((b) => ({
+            label: b.label.replace(' 前半', '前').replace(' 後半', '後').replace(' 残り2分', '終盤'),
+            own: round(b.own / a.timedGames),
+            opp: round(b.opp / a.timedGames),
+          })),
+          { height: 190, format: (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1)) },
+        )}</div>
+<div class="legend">各Qを前半・後半に分けた、1試合あたりの得点。「Q4終盤」は残り2分（Q4後の内数）。手元の時計による</div>`
+      : '';
+  const units =
+    a.units.length > 0
+      ? `<h2>5人の組み合わせ（出場時間の長い順・期間の合計）</h2>
+<table><thead><tr><th class="l">コート上の5人</th><th>試合</th><th>MIN</th><th>得点</th><th>失点</th><th>+/-</th></tr></thead><tbody>
+${a.units
+  .slice(0, 8)
+  .map((u) => {
+    const pm = u.pointsFor - u.pointsAgainst;
+    return `<tr><td class="l b">${u.numbers.map((n) => `#${esc(n)}`).join(' ')}</td><td>${u.games}</td><td>${u.approximate ? '約' : ''}${formatClock(u.seconds)}</td><td>${u.pointsFor}</td><td>${u.pointsAgainst}</td><td class="b">${pm > 0 ? '+' : ''}${pm}</td></tr>`;
+  })
+  .join('')}
+</tbody></table>`
+      : '';
+  return bands + units;
+}
+
 function teamSheet(a: TeamAnalysis, o: ReportOptions): Sheet {
   const n = a.games;
   const avgFor = perGame(a.own.pts, n);
   const avgAgainst = perGame(a.opp.pts, n);
   const diff = avgFor - avgAgainst;
   const trend = a.trend.slice(-20);
+  // チームには40分換算が無いので、1試合平均で出す
+  const teamMode: StatMode = o.mode === 'per40' ? 'avg' : o.mode;
   const body = `
 <div class="tiles">
 <div class="tile"><div class="l">戦績</div><div class="v">${a.wins}勝 ${a.losses}敗${a.draws > 0 ? ` ${a.draws}分` : ''}</div><div class="s">${n}試合</div></div>
@@ -334,10 +370,11 @@ function teamSheet(a: TeamAnalysis, o: ReportOptions): Sheet {
     350,
   )}</div>
 </div></div>
-<h2>チーム成績（${MODE_LABEL[o.mode]}）</h2>
+${timeSections(a)}
+<h2>チーム成績（${MODE_LABEL[teamMode]}）</h2>
 <table>${statHead(['<th rowspan="2"></th>'], TEAM_STAT_COLUMNS)}<tbody>
-<tr><td class="b">自チーム</td>${TEAM_STAT_COLUMNS.map((c) => `<td class="${cellClass(c)}">${cell(c, a.own, n, o.mode)}</td>`).join('')}</tr>
-<tr><td class="b">相手</td>${TEAM_STAT_COLUMNS.map((c) => `<td class="${cellClass(c)}">${cell(c, a.opp, n, o.mode)}</td>`).join('')}</tr>
+<tr><td class="b">自チーム</td>${TEAM_STAT_COLUMNS.map((c) => `<td class="${cellClass(c)}">${cell(c, a.own, n, teamMode)}</td>`).join('')}</tr>
+<tr><td class="b">相手</td>${TEAM_STAT_COLUMNS.map((c) => `<td class="${cellClass(c)}">${cell(c, a.opp, n, teamMode)}</td>`).join('')}</tr>
 </tbody></table>
 <h2>試合ごとの成績（新しい順）</h2>
 <table>${statHead(['<th rowspan="2">日付</th>', '<th rowspan="2">相手</th>', '<th rowspan="2">結果</th>', '<th rowspan="2">失点</th>'], TEAM_STAT_COLUMNS)}<tbody>
@@ -438,7 +475,7 @@ ${['pts', 'reb', 'ast']
 </div></div>
 <h2>成績</h2>
 <table class="wide">${statHead(['<th rowspan="2" class="l"></th>'], STAT_COLUMNS)}<tbody>
-${row('合計', 'total')}${row('平均', 'avg')}</tbody></table>
+${row('合計', 'total')}${row('平均', 'avg')}${p.line.lineupGames ? row('40分換算', 'per40') : ''}</tbody></table>
 <h2>試合ごとの成績（新しい順）</h2>
 <table class="wide">${statHead(['<th rowspan="2">日付</th>', '<th rowspan="2">相手</th>', '<th rowspan="2">結果</th>'], counts)}<tbody>
 ${[...p.log]
