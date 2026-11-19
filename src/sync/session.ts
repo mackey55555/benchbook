@@ -31,11 +31,24 @@ export interface TeamState {
   /** 直近の同期が失敗した理由（成功すると消える） */
   syncError: string | null;
   lastSyncedAt: number | null;
+  /** 自分の契約（運営者として払っているもの）。なければ null */
+  subscription: Subscription | null;
   /** いまの置き場所の、まだ送っていない変更の数 */
   pending: number;
   /** 端末の内容が同期や切り替えで変わるたびに増える。画面の再読み込みに使う */
   dataVersion: number;
 }
+
+export interface Subscription {
+  /** 契約しているチーム数（枠） */
+  tier: number;
+  /** 期限（ミリ秒） */
+  expiresAt: number;
+  productId: string;
+}
+
+/** 契約が有効か（期限内か） */
+export const isSubscribed = (s: Subscription | null, now: number): boolean => s !== null && s.expiresAt > now;
 
 let state: TeamState = {
   ready: supabase === null,
@@ -47,6 +60,7 @@ let state: TeamState = {
   syncing: false,
   syncError: null,
   lastSyncedAt: null,
+  subscription: null,
   pending: 0,
   dataVersion: 0,
 };
@@ -156,7 +170,14 @@ export async function setDisplayName(name: string): Promise<void> {
 export async function signOut(): Promise<void> {
   for (const space of listSpaces(db)) purgeSpace(db, space.id);
   setCurrentSpace(db, null);
-  set({ ...readLocal(), displayName: '', syncError: null, lastSyncedAt: null, dataVersion: state.dataVersion + 1 });
+  set({
+    ...readLocal(),
+    displayName: '',
+    subscription: null,
+    syncError: null,
+    lastSyncedAt: null,
+    dataVersion: state.dataVersion + 1,
+  });
   await client().auth.signOut();
 }
 
@@ -169,7 +190,14 @@ export async function deleteAccount(): Promise<void> {
   if (error) throw error;
   for (const space of listSpaces(db)) purgeSpace(db, space.id);
   setCurrentSpace(db, null);
-  set({ ...readLocal(), displayName: '', syncError: null, lastSyncedAt: null, dataVersion: state.dataVersion + 1 });
+  set({
+    ...readLocal(),
+    displayName: '',
+    subscription: null,
+    syncError: null,
+    lastSyncedAt: null,
+    dataVersion: state.dataVersion + 1,
+  });
   // サーバーの利用者はもういないので、端末のサインイン状態だけを消す
   await client().auth.signOut({ scope: 'local' });
 }
@@ -212,6 +240,23 @@ async function refreshSpaces(): Promise<void> {
   if (current && !rows.some((r) => r.id === current && r.active)) setCurrentSpace(db, null);
 }
 
+async function loadSubscription(): Promise<void> {
+  const { data, error } = await client().from('subscriptions').select('tier, expires_at, product_id').maybeSingle();
+  if (error) throw error;
+  set({
+    subscription: data
+      ? { tier: data.tier as number, expiresAt: Date.parse(data.expires_at as string), productId: data.product_id as string }
+      : null,
+  });
+}
+
+/** 契約の枠を、チームに割り当てる・外す（運営者だけ） */
+export async function setTeamSlot(teamId: string, assigned: boolean): Promise<void> {
+  const { error } = await client().rpc('set_team_slot', { p_team: teamId, p_assigned: assigned });
+  if (error) throw error;
+  await syncNow();
+}
+
 let running: Promise<void> | null = null;
 
 /** 所属チームを取り直して、使えるチームをすべて同期する。同時に動くのは1つだけ */
@@ -224,6 +269,7 @@ export function syncNow(): Promise<void> {
     let received = 0;
     try {
       await refreshSpaces();
+      await loadSubscription();
       const remote = supabaseRemote(client());
       for (const space of listSpaces(db)) {
         if (!space.active) continue;

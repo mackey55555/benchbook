@@ -9,6 +9,7 @@ import {
   createTeam,
   deleteAccount,
   errorMessage,
+  isSubscribed,
   requestCode,
   setDisplayName,
   signOut,
@@ -206,6 +207,8 @@ function SignedIn() {
         </Pressable>
       ))}
 
+      {owned.length > 0 && <PlanCard />}
+
       <SectionTitle>招待で入る</SectionTitle>
       <Card>
         <Text style={styles.body}>チームの人から届いた招待のリンクかコードを、そのまま貼ってください。</Text>
@@ -254,6 +257,44 @@ function SignedIn() {
       <View style={styles.footer}>
         <Button title="アカウントを削除" variant="ghost" small disabled={busy} onPress={confirmDeleteAccount} />
       </View>
+    </>
+  );
+}
+
+const formatDate = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+};
+
+/** 運営者の契約の状態 */
+function PlanCard() {
+  const team = useTeamState();
+  const [now] = useState(() => Date.now());
+  const paid = team.spaces.filter((s) => s.role === 'owner' && !s.complimentary);
+  const used = paid.filter((s) => s.slotAssigned).length;
+  if (paid.length === 0) return null;
+  const sub = team.subscription;
+  return (
+    <>
+      <SectionTitle>契約</SectionTitle>
+      <Card>
+        {sub && isSubscribed(sub, now) ? (
+          <>
+            <Text style={styles.lead}>チームプラン（{sub.tier}チーム）</Text>
+            <Text style={styles.body}>
+              {formatDate(sub.expiresAt)} まで。{used} / {sub.tier} チームに割り当てています。割り当ては、各チームの画面で入れ替えられます。
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.lead}>契約がありません</Text>
+            <Text style={styles.body}>
+              {sub ? `${formatDate(sub.expiresAt)} に契約が切れました。` : ''}
+              チームをメンバー全員で使うには、チームプランの契約が必要です。契約の手続きは準備中です。
+            </Text>
+          </>
+        )}
+      </Card>
     </>
   );
 }
