@@ -439,3 +439,7 @@ enabled = true
 # 関数の中で Authorization ヘッダーの値（REVENUECAT_WEBHOOK_AUTH）を確かめる
 [functions.revenuecat-webhook]
 verify_jwt = false
+
+# 「Appleでサインイン」の連携の解除。呼んだ人は関数の中で確かめる
+[functions.apple-account]
+verify_jwt = false
