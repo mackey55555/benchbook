@@ -160,6 +160,20 @@ export async function signOut(): Promise<void> {
   await client().auth.signOut();
 }
 
+/**
+ * アカウントを削除する。運営しているチームは内容ごと消え、ほかのチームからは抜ける。
+ * 端末にあるチームの内容も消す（個人の記録は残る）。
+ */
+export async function deleteAccount(): Promise<void> {
+  const { error } = await client().rpc('delete_account');
+  if (error) throw error;
+  for (const space of listSpaces(db)) purgeSpace(db, space.id);
+  setCurrentSpace(db, null);
+  set({ ...readLocal(), displayName: '', syncError: null, lastSyncedAt: null, dataVersion: state.dataVersion + 1 });
+  // サーバーの利用者はもういないので、端末のサインイン状態だけを消す
+  await client().auth.signOut({ scope: 'local' });
+}
+
 // ---------------------------------------------------------------- チームと同期
 
 interface MyTeamRow {

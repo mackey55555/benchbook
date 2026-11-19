@@ -20,7 +20,7 @@ import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
 import { colors, radius } from '@/ui/theme';
-import { useAnalysis } from '@/ui/useAnalysis';
+import { useAnalysis, useAnalysisLimit } from '@/ui/useAnalysis';
 
 /** 推移グラフに出す試合数（新しいほうから） */
 const TREND_GAMES = 10;
@@ -56,6 +56,7 @@ export default function PlayerScreen() {
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
 
   const analysis = useAnalysis(range);
+  const limit = useAnalysisLimit();
   // 期間内に試合が無くても氏名と背番号を出せるよう、全期間からも探す
   const everything = useAnalysis('all');
   const player = analysis.players.find((p) => p.key === params.key);
@@ -78,7 +79,9 @@ export default function PlayerScreen() {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
       <Stack.Screen options={{ title: identity ? identity.name || `#${identity.number}` : '選手' }} />
-      {!identity ? (
+      {limit.limited ? (
+        <Text style={styles.empty}>選手ごとのページは、チームプランで使えます</Text>
+      ) : !identity ? (
         <Text style={styles.empty}>この選手の記録が見つかりません</Text>
       ) : (
         <>

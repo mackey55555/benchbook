@@ -7,6 +7,7 @@ import { teamEnabled } from '@/sync/client';
 import {
   acceptInvite,
   createTeam,
+  deleteAccount,
   errorMessage,
   requestCode,
   setDisplayName,
@@ -161,6 +162,25 @@ function SignedIn() {
       ],
     );
 
+  const owned = team.spaces.filter((s) => s.role === 'owner');
+  const confirmDeleteAccount = () =>
+    showDialog(
+      'アカウントを削除しますか？',
+      [
+        owned.length > 0
+          ? `あなたが運営者のチーム（${owned.map((s) => `「${s.name}」`).join('、')}）は、試合と名簿ごと消えます。メンバー全員が開けなくなります。`
+          : '',
+        'メンバーとして入っているチームからは抜けます。そこで記録した試合は、チームに残ります。',
+        'この端末の個人の記録は残ります。元に戻せません。',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除する', style: 'destructive', onPress: () => void run(deleteAccount) },
+      ],
+    );
+
   return (
     <>
       <SectionTitle>所属チーム</SectionTitle>
@@ -231,6 +251,9 @@ function SignedIn() {
         />
         <Button title="サインアウト" variant="secondary" small onPress={confirmSignOut} />
       </Card>
+      <View style={styles.footer}>
+        <Button title="アカウントを削除" variant="ghost" small disabled={busy} onPress={confirmDeleteAccount} />
+      </View>
     </>
   );
 }
@@ -243,6 +266,7 @@ const styles = StyleSheet.create({
   body: { fontSize: 14, lineHeight: 21, color: colors.text },
   label: { fontSize: 12, fontWeight: '700', color: colors.sub },
   note: { fontSize: 13, color: colors.sub },
+  footer: { marginTop: 8, alignItems: 'center' },
   code: { fontSize: 24, letterSpacing: 6, textAlign: 'center' },
   teamRow: {
     flexDirection: 'row',

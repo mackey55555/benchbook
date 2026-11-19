@@ -11,6 +11,12 @@ const key = process.env.EXPO_PUBLIC_SUPABASE_KEY ?? '';
 
 export const teamEnabled = url !== '' && key !== '';
 
+/**
+ * 分析の無料範囲（個人は直近3試合まで）を有効にするか。
+ * チームプランの契約ができるようになるまでは入れない（入れると、払う手段がないのに機能だけ減るため）。
+ */
+export const paywallEnabled = teamEnabled && process.env.EXPO_PUBLIC_PAYWALL === '1';
+
 export const supabase: SupabaseClient | null = teamEnabled
   ? createClient(url, key, {
       auth: {
