@@ -63,5 +63,9 @@
 - `supabase/` に Supabase のテーブル定義・権限の規則・テストがある。構想と決定事項は docs/SPEC.md の10章
 - 手元で動かす：Docker（colima）を起動してから `supabase start`。止めるときは `supabase stop`
 - テスト：`supabase test db`（pgTAP）。権限の規則を変えたら、必ずテストを足して通す
+- アプリからつなぐ：`EXPO_PUBLIC_SUPABASE_URL` と `EXPO_PUBLIC_SUPABASE_KEY`（`supabase status` の API_URL と PUBLISHABLE_KEY）を付けて `expo start` する。付けなければチームプランの画面は出ない。エミュレータからは `adb reverse tcp:54521 tcp:54521`
+- 同期の本体は `src/sync/`（`engine.ts` が送る・受け取る、`session.ts` がサインインとチームの操作）。`npx jest` は偽のサーバーで確かめ、`sh scripts/test-sync.sh` は手元の Supabase を相手に通しで確かめる（権限の規則も含む）
+- 端末のテーブルに列を足したら、`src/sync/tables.ts` の対応表と、サーバーのテーブルも合わせる。`package.json` の scripts は変えない（ビルドの指紋が変わり、配信済みのアプリに更新が届かなくなる）
+- 確認コードのメールは `supabase/templates/code.html`。クラウドでは、同じ内容をダッシュボードのメールテンプレートに設定する
 - テーブルを変えるときは `supabase/migrations/` に新しいファイルを足す（適用済みのファイルは書き換えない。まだクラウドに出していない間は例外）
 - アプリ本体はまだサーバーにつないでいない。未加入（個人）で使う動作は、サーバーなしのまま変えない

@@ -244,6 +244,15 @@ otp_expiry = 3600
 # sender_name = "Admin"
 
 # Uncomment to customize email template
+# サインインはメールの6けたのコードで行う（リンクではなく、コードを本文に出す）
+[auth.email.template.magic_link]
+subject = "Benchbook の確認コード"
+content_path = "./supabase/templates/code.html"
+
+[auth.email.template.confirmation]
+subject = "Benchbook の確認コード"
+content_path = "./supabase/templates/code.html"
+
 # [auth.email.template.invite]
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
