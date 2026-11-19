@@ -1,4 +1,4 @@
-import { eq, inArray, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
 
 import { PRACTICE_GAME_ID } from '@/domain/practice';
 
@@ -114,17 +114,27 @@ export function exportGame(db: Db, gameId: string): BackupData {
   };
 }
 
+/** 個人の置き場所の全データを書き出す。チームの内容はサーバーにあるので含めない */
 export function exportAll(db: Db): BackupData {
+  const ownTeams = db.select().from(teams).where(isNull(teams.spaceId)).all();
+  const teamIds = new Set(ownTeams.map((t) => t.id));
+  // 練習用の試合は書き出さない
+  const ownGames = db
+    .select()
+    .from(games)
+    .where(and(ne(games.id, PRACTICE_GAME_ID), isNull(games.spaceId)))
+    .all();
+  const gameIds = new Set(ownGames.map((g) => g.id));
+  const ofGames = <T extends { gameId: string }>(rows: T[]): T[] => rows.filter((r) => gameIds.has(r.gameId));
   return {
     ...envelope('all'),
-    teams: db.select().from(teams).all(),
-    players: db.select().from(players).all(),
-    // 練習用の試合は書き出さない
-    games: db.select().from(games).where(ne(games.id, PRACTICE_GAME_ID)).all(),
-    gameRoster: db.select().from(gameRoster).where(ne(gameRoster.gameId, PRACTICE_GAME_ID)).all(),
-    gameStaff: db.select().from(gameStaff).where(ne(gameStaff.gameId, PRACTICE_GAME_ID)).all(),
-    gameEvents: db.select().from(gameEvents).where(ne(gameEvents.gameId, PRACTICE_GAME_ID)).all(),
-    periodChecks: db.select().from(periodChecks).where(ne(periodChecks.gameId, PRACTICE_GAME_ID)).all(),
+    teams: ownTeams,
+    players: db.select().from(players).all().filter((p) => teamIds.has(p.teamId)),
+    games: ownGames,
+    gameRoster: ofGames(db.select().from(gameRoster).all()),
+    gameStaff: ofGames(db.select().from(gameStaff).all()),
+    gameEvents: ofGames(db.select().from(gameEvents).all()),
+    periodChecks: ofGames(db.select().from(periodChecks).all()),
   };
 }
 
@@ -194,7 +204,9 @@ export function importBackup(db: Db, data: BackupData): ImportResult {
     const result: ImportResult = { games: 0, events: 0, teams: 0, players: 0, skippedGames: 0 };
 
     const existingTeams = new Set(tx.select({ id: teams.id }).from(teams).all().map((r) => r.id));
-    const hasOwn = tx.select().from(teams).where(eq(teams.isOwn, true)).get() !== undefined;
+    // 読み込み先は常に個人の置き場所
+    const hasOwn =
+      tx.select().from(teams).where(and(eq(teams.isOwn, true), isNull(teams.spaceId))).get() !== undefined;
     const teamIdMap = new Map<string, string>();
     for (const row of data.teams as (typeof teams.$inferInsert)[]) {
       if (existingTeams.has(row.id)) continue;

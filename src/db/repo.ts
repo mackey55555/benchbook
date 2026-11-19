@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, max, ne, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, max, ne, notInArray, type SQL } from 'drizzle-orm';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 
 import {
@@ -21,7 +21,7 @@ import { ulid } from '@/lib/ulid';
 import * as schema from './schema';
 import type { Game, GameStaff, PeriodCheck, Player, Team } from './schema';
 
-const { teams, players, games, gameRoster, gameStaff, gameEvents, periodChecks } = schema;
+const { teams, players, games, gameRoster, gameStaff, gameEvents, periodChecks, appState, spaces } = schema;
 
 /** expo-sqlite（アプリ）と better-sqlite3（テスト）の両方で動く同期DB */
 export type Db = BaseSQLiteDatabase<'sync', unknown, typeof schema>;
@@ -31,18 +31,62 @@ export class RepoError extends Error {}
 
 const other = (side: Side): Side => (side === 'A' ? 'B' : 'A');
 
+// ---------------------------------------------------------------- 置き場所（個人／チーム）
+
+const SPACE_KEY = 'space';
+
+/** いま開いている置き場所。null は個人（端末内だけ）、それ以外はサーバーのチームID */
+export function currentSpaceId(db: Db): string | null {
+  const row = db.select().from(appState).where(eq(appState.key, SPACE_KEY)).get();
+  return row?.value || null;
+}
+
+export function setCurrentSpace(db: Db, spaceId: string | null): void {
+  db.insert(appState)
+    .values({ key: SPACE_KEY, value: spaceId ?? '' })
+    .onConflictDoUpdate({ target: appState.key, set: { value: spaceId ?? '' } })
+    .run();
+}
+
+const inSpace = (column: typeof teams.spaceId | typeof games.spaceId, spaceId: string | null): SQL =>
+  spaceId === null ? isNull(column) : eq(column, spaceId);
+
+/** チームの自チーム名簿のID。どの端末で作っても同じになるようにして、二重にできないようにする */
+export function ownSquadId(spaceId: string): string {
+  return `own-${spaceId}`;
+}
+
 // ---------------------------------------------------------------- teams
 
+/** いまの置き場所の自チーム名簿。なければ作る */
 export function ensureOwnTeam(db: Db): Team {
-  const existing = db.select().from(teams).where(eq(teams.isOwn, true)).get();
+  const spaceId = currentSpaceId(db);
+  const existing = db
+    .select()
+    .from(teams)
+    .where(and(eq(teams.isOwn, true), inSpace(teams.spaceId, spaceId)))
+    .get();
   if (existing) return existing;
-  const team: Team = { id: ulid(), name: '自チーム', isOwn: true, createdAt: Date.now() };
+  const space = spaceId ? db.select().from(spaces).where(eq(spaces.id, spaceId)).get() : undefined;
+  const team: Team = {
+    id: spaceId ? ownSquadId(spaceId) : ulid(),
+    name: space?.name ?? '自チーム',
+    isOwn: true,
+    createdAt: Date.now(),
+    spaceId,
+    dirty: 1,
+  };
   db.insert(teams).values(team).run();
   return team;
 }
 
 export function listTeams(db: Db): Team[] {
-  return db.select().from(teams).orderBy(desc(teams.isOwn), asc(teams.name)).all();
+  return db
+    .select()
+    .from(teams)
+    .where(inSpace(teams.spaceId, currentSpaceId(db)))
+    .orderBy(desc(teams.isOwn), asc(teams.name))
+    .all();
 }
 
 export function getTeam(db: Db, id: string): Team | undefined {
@@ -52,7 +96,14 @@ export function getTeam(db: Db, id: string): Team | undefined {
 export function createTeam(db: Db, name: string): Team {
   const trimmed = name.trim();
   if (!trimmed) throw new RepoError('チーム名を入力してください');
-  const team: Team = { id: ulid(), name: trimmed, isOwn: false, createdAt: Date.now() };
+  const team: Team = {
+    id: ulid(),
+    name: trimmed,
+    isOwn: false,
+    createdAt: Date.now(),
+    spaceId: currentSpaceId(db),
+    dirty: 1,
+  };
   db.insert(teams).values(team).run();
   return team;
 }
@@ -97,7 +148,7 @@ export function addPlayer(db: Db, teamId: string, input: { number: string; name:
     .where(and(eq(players.teamId, teamId), eq(players.number, number)))
     .get();
   if (dup) throw new RepoError(`背番号 ${number} は登録済みです`);
-  const player: Player = { id: ulid(), teamId, number, name: input.name.trim(), isActive: true };
+  const player: Player = { id: ulid(), teamId, number, name: input.name.trim(), isActive: true, dirty: 1 };
   db.insert(players).values(player).run();
   return player;
 }
@@ -169,6 +220,9 @@ export function createGame(db: Db): Game {
     clockPeriod: null,
     clockRemainingMs: null,
     clockStartedAt: null,
+    spaceId: own.spaceId,
+    createdBy: null,
+    dirty: 1,
   };
   const ownPlayers = listPlayers(db, own.id)
     .filter((p) => p.isActive)
@@ -216,6 +270,9 @@ export function createPracticeGame(db: Db): Game {
     clockPeriod: null,
     clockRemainingMs: null,
     clockStartedAt: null,
+    spaceId: null,
+    createdBy: null,
+    dirty: 1,
   };
   db.transaction((tx) => {
     tx.insert(games).values(game).run();
@@ -262,7 +319,7 @@ export function listGames(db: Db): GameSummary[] {
   const rows = db
     .select()
     .from(games)
-    .where(ne(games.id, PRACTICE_GAME_ID))
+    .where(and(ne(games.id, PRACTICE_GAME_ID), inSpace(games.spaceId, currentSpaceId(db))))
     .orderBy(desc(games.date), desc(games.createdAt))
     .all();
   const scoring = db
@@ -507,7 +564,7 @@ export function loadRosterFromTeam(
         isCaptain: false,
       };
       tx.insert(gameRoster).values(entry).run();
-      kept.push(entry);
+      kept.push({ ...entry, dirty: 1 });
     }
     tx.update(games)
       .set(side === 'A' ? { teamAName: team.name } : { teamBName: team.name })
@@ -526,10 +583,10 @@ export function saveRosterAsTeam(db: Db, gameId: string, side: Side): Team {
     let team = tx
       .select()
       .from(teams)
-      .where(and(eq(teams.name, name), eq(teams.isOwn, false)))
+      .where(and(eq(teams.name, name), eq(teams.isOwn, false), inSpace(teams.spaceId, game.spaceId)))
       .get();
     if (!team) {
-      team = { id: ulid(), name, isOwn: false, createdAt: Date.now() };
+      team = { id: ulid(), name, isOwn: false, createdAt: Date.now(), spaceId: game.spaceId, dirty: 1 };
       tx.insert(teams).values(team).run();
     }
     const existing = tx.select().from(players).where(eq(players.teamId, team.id)).all();
@@ -1062,6 +1119,7 @@ function writeCheck(db: Db, gameId: string, period: number, matched: boolean, no
     matched,
     note,
     confirmedAt: Date.now(),
+    dirty: 1,
   };
   db.insert(periodChecks)
     .values(row)
