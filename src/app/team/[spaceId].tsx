@@ -6,11 +6,13 @@ import {
   createInvite,
   deleteTeam,
   errorMessage,
+  isSubscribed,
   inviteLink,
   leaveTeam,
   listMembers,
   removeMember,
   renameTeam,
+  setTeamSlot,
   switchSpace,
   syncNow,
   useTeamState,
@@ -63,8 +65,7 @@ export default function TeamScreen() {
       await Share.share({
         message:
           `Benchbook のチーム「${space.name}」への招待です。\n` +
-          `アプリを入れてから、下のリンクを開いてください（14日間有効）。\n${inviteLink(token)}\n\n` +
-          `開けないときは、アプリの「設定 → チームプラン → 招待で入る」に、次のコードを貼ってください。\n${token}`,
+          `下のリンクを開いて、参加してください（14日間有効）。\n${inviteLink(token)}`,
       });
     });
 
@@ -124,7 +125,7 @@ export default function TeamScreen() {
           {space.active
             ? '記録した試合と名簿が、メンバー全員に届きます。'
             : owner
-              ? 'いまは利用できません。チームプランの契約が必要です（契約の機能は準備中です）。'
+              ? 'いまは利用できません。下の「契約」を確かめてください。'
               : 'いまは利用できません。運営者の契約が切れています。'}
         </Text>
         {space.active && team.spaceId !== space.id && (
@@ -140,6 +141,8 @@ export default function TeamScreen() {
         )}
         {team.spaceId === space.id && <Text style={styles.note}>いま、このチームを開いています。</Text>}
       </Card>
+
+      {owner && !space.complimentary && <SlotCard spaceId={space.id} busy={busy} run={run} />}
 
       <SectionTitle>メンバー（{space.memberCount}人）</SectionTitle>
       <Card>
@@ -168,6 +171,63 @@ export default function TeamScreen() {
         )}
       </View>
     </ScrollView>
+  );
+}
+
+/** 契約の枠を、このチームに割り当てる・外す（運営者だけに出す） */
+function SlotCard(props: { spaceId: string; busy: boolean; run: (action: () => Promise<void>) => Promise<void> }) {
+  const team = useTeamState();
+  const router = useRouter();
+  const [now] = useState(() => Date.now());
+  const space = team.spaces.find((s) => s.id === props.spaceId);
+  if (!space) return null;
+  const subscribed = isSubscribed(team.subscription, now);
+  const used = team.spaces.filter((s) => s.role === 'owner' && s.slotAssigned && !s.complimentary).length;
+  const tier = subscribed ? (team.subscription?.tier ?? 0) : 0;
+  return (
+    <>
+      <SectionTitle>契約</SectionTitle>
+      <Card>
+        {!subscribed ? (
+          <>
+            <Text style={styles.body}>チームプランの契約がありません。契約すると、このチームをメンバー全員で使えます。</Text>
+            <Button title="料金を見て契約する" variant="accent" onPress={() => router.push('/team/plan')} />
+          </>
+        ) : space.slotAssigned ? (
+          <>
+            <Text style={styles.body}>
+              {space.active
+                ? `このチームに、契約の枠を割り当てています（${used} / ${tier} チーム）。`
+                : `枠を割り当てていますが、契約のチーム数（${tier}）を超えているため、いまは使えません。ほかのチームの割り当てを外すと使えます。`}
+            </Text>
+            <Button
+              title="割り当てを外す"
+              variant="secondary"
+              small
+              disabled={props.busy}
+              onPress={() =>
+                showDialog('割り当てを外しますか？', 'メンバー全員が、このチームを開けなくなります。内容は消えず、もう一度割り当てれば戻ります。', [
+                  { text: 'キャンセル', style: 'cancel' },
+                  { text: '外す', style: 'destructive', onPress: () => void props.run(() => setTeamSlot(space.id, false)) },
+                ])
+              }
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.body}>
+              契約は {tier} チーム分で、いま {used} チームに割り当てています。
+              {used >= tier ? 'このチームで使うには、ほかのチームの割り当てを外すか、契約のチーム数を増やしてください。' : ''}
+            </Text>
+            <Button
+              title="このチームに割り当てる"
+              disabled={props.busy || used >= tier}
+              onPress={() => void props.run(() => setTeamSlot(space.id, true))}
+            />
+          </>
+        )}
+      </Card>
+    </>
   );
 }
 

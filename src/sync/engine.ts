@@ -243,6 +243,21 @@ export async function syncSpace(db: Db, remote: Remote, spaceId: string): Promis
   return { sent, received };
 }
 
+/**
+ * チームが使えなくなったとき（契約切れ）に、ほかの人が記録した試合を端末から消す（サーバーには伝えない）。
+ * 自分が記録した試合と名簿は残す。次に使えるようになったら最初から受け取り直す。
+ */
+export function dropOthersGames(db: Db, spaceId: string, userId: string): void {
+  applying(db, (tx) => {
+    const others = 'SELECT id FROM games WHERE space_id = ? AND created_by IS NOT NULL AND created_by <> ?';
+    for (const child of ['period_checks', 'game_events', 'game_staff', 'game_roster']) {
+      tx.run(stmt(`DELETE FROM ${child} WHERE game_id IN (${others})`, [spaceId, userId]));
+    }
+    tx.run(stmt('DELETE FROM games WHERE space_id = ? AND created_by IS NOT NULL AND created_by <> ?', [spaceId, userId]));
+    tx.run(stmt('DELETE FROM sync_state WHERE space_id = ?', [spaceId]));
+  });
+}
+
 /** チームから外れたときなどに、そのチームの内容を端末から消す（サーバーには伝えない） */
 export function purgeSpace(db: Db, spaceId: string): void {
   applying(db, (tx) => {

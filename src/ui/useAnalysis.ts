@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { db } from '@/db/client';
-import { currentSpaceId, getGameBundle, listGames, todayString } from '@/db/repo';
+import { currentSpaceId, currentSpaceLapsed, getGameBundle, listGames, todayString } from '@/db/repo';
 import { NO_FILTER, analyzeTeam, filterGames, type AnalysisGame, type DateRange, type TeamAnalysis } from '@/domain/analysis';
 import { paywallEnabled } from '@/sync/client';
 
@@ -25,7 +25,7 @@ export function useAnalysisLimit(): AnalysisLimit {
   const [version] = useRefresh();
   return useMemo(() => {
     const totalGames = listGames(db).filter((g) => g.game.status === 'finished').length;
-    return { limited: paywallEnabled && currentSpaceId(db) === null, totalGames };
+    return { limited: paywallEnabled && (currentSpaceId(db) === null || currentSpaceLapsed(db)), totalGames };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- version で再読み込みする
   }, [version]);
 }
@@ -35,7 +35,7 @@ export function useAnalysis(range: DateRange): TeamAnalysis {
   const [version] = useRefresh();
   return useMemo(() => {
     const finished = listGames(db).filter((g) => g.game.status === 'finished');
-    const limited = paywallEnabled && currentSpaceId(db) === null;
+    const limited = paywallEnabled && (currentSpaceId(db) === null || currentSpaceLapsed(db));
     // 無料の範囲では、期間によらず直近の数試合（一覧は新しい順）
     const target = limited
       ? finished.slice(0, FREE_ANALYSIS_GAMES)

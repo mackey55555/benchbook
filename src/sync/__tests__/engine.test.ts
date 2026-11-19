@@ -14,6 +14,7 @@ import {
   listPlayers,
   listTeams,
   setCurrentSpace,
+  setCurrentUser,
   startGame,
   updateGame,
   updatePlayer,
@@ -23,7 +24,7 @@ import {
 import * as schema from '@/db/schema';
 import { openTestDb } from '@/db/__tests__/testDb';
 
-import { pendingCount, purgeSpace, push, syncSpace } from '../engine';
+import { dropOthersGames, pendingCount, purgeSpace, push, syncSpace } from '../engine';
 import { FakeRemote } from '../testing/fakeRemote';
 
 const TEAM = '11111111-1111-1111-1111-111111111111';
@@ -278,5 +279,36 @@ describe('同期', () => {
     // サーバーの内容には触れない
     expect(remote.rows('games').filter((g) => g.deleted_at)).toHaveLength(0);
     expect(pendingCount(a, OTHER)).toBe(0);
+  });
+
+  test('契約が切れたチームでは、自分が記録した試合だけが残る', async () => {
+    const remote = new FakeRemote();
+    const a = device();
+    const b = device();
+    const theirs = recordGame(a);
+    await syncSpace(a, remote, TEAM);
+    await syncSpace(b, remote, TEAM);
+    // b も1試合記録して送る。サーバーは b の利用者IDを記録した人として返す
+    setCurrentUser(b, 'user-b');
+    const mine = recordGame(b);
+    await push(b, remote, TEAM);
+    remote.rows('games').find((g) => g.id === mine)!.created_by = 'user-b';
+    await syncSpace(b, remote, TEAM);
+    expect(listGames(b)).toHaveLength(2);
+
+    // 契約が切れる
+    b.update(schema.spaces).set({ active: false }).where(eq(schema.spaces.id, TEAM)).run();
+    expect(listGames(b).map((g) => g.game.id)).toEqual([mine]);
+    dropOthersGames(b, TEAM, 'user-b');
+    expect(b.select().from(schema.games).all().map((g) => g.id)).toEqual([mine]);
+    expect(b.select().from(schema.gameEvents).all().every((e) => e.gameId === mine)).toBe(true);
+    // 消したことはサーバーに伝えない
+    expect(pendingCount(b, TEAM)).toBe(0);
+    expect(remote.rows('games').filter((g) => g.deleted_at)).toHaveLength(0);
+
+    // 契約が戻ると、ほかの人の試合も受け取り直す
+    b.update(schema.spaces).set({ active: true }).where(eq(schema.spaces.id, TEAM)).run();
+    await syncSpace(b, remote, TEAM);
+    expect(listGames(b).map((g) => g.game.id).sort()).toEqual([theirs, mine].sort());
   });
 });

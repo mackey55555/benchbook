@@ -87,7 +87,7 @@ select lives_ok($$ update public.games set deleted_at = now() where id = 'G1' $$
 
 -- ---- 解約すると、メンバーから内容が見えなくなる
 select pg_temp.act_as_admin();
-update public.subscriptions set expires_at = now() - interval '1 day';
+update public.subscriptions set expires_at = now() - interval '2 days';
 select pg_temp.act_as('00000000-0000-0000-0000-00000000000b');
 select is((select count(*) from public.games), 0::bigint, '契約が切れるとメンバーに試合が見えなくなる');
 select is((select count(*) from public.teams), 1::bigint, '契約が切れてもチームの名前は見える');

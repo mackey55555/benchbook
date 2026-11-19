@@ -26,8 +26,11 @@ export function SpaceSwitcher() {
     switchSpace(spaceId);
   };
 
+  const lapsed = team.spaces.some((s) => s.id === team.spaceId && !s.active);
   const status = team.spaceId === null
     ? '個人の記録は、この端末の中だけに保存されます'
+    : lapsed
+      ? 'このチームは、いま契約がありません。自分が記録した試合だけを表示しています'
     : team.syncing
       ? '同期しています…'
       : team.syncError
@@ -46,7 +49,6 @@ export function SpaceSwitcher() {
             label={s.name}
             icon={s.active ? 'people' : 'lock-closed'}
             active={team.spaceId === s.id}
-            disabled={!s.active}
             onPress={() => choose(s.id)}
           />
         ))}
@@ -54,7 +56,7 @@ export function SpaceSwitcher() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${status}。タップで同期する`}
-        disabled={team.spaceId === null || team.syncing}
+        disabled={team.spaceId === null || lapsed || team.syncing}
         onPress={() => void syncNow()}
         hitSlop={8}
         style={styles.statusRow}
@@ -62,7 +64,7 @@ export function SpaceSwitcher() {
         <Text style={[styles.status, team.spaceId !== null && Boolean(team.syncError) && styles.statusError]} numberOfLines={2}>
           {status}
         </Text>
-        {team.spaceId !== null && !team.syncing && <Ionicons name="refresh" size={14} color={colors.sub} />}
+        {team.spaceId !== null && !lapsed && !team.syncing && <Ionicons name="refresh" size={14} color={colors.sub} />}
       </Pressable>
     </View>
   );

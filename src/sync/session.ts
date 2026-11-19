@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { Platform } from 'react-native';
 
 import { db } from '@/db/client';
 import {
@@ -6,12 +7,13 @@ import {
   currentSpaceId,
   listSpaces,
   setCurrentSpace,
+  setCurrentUser,
 } from '@/db/repo';
 import * as schema from '@/db/schema';
 import type { Space } from '@/db/schema';
 
 import { supabase } from './client';
-import { pendingCount, purgeSpace, syncSpace } from './engine';
+import { dropOthersGames, pendingCount, purgeSpace, syncSpace } from './engine';
 import { supabaseRemote } from './supabaseRemote';
 
 /**
@@ -31,11 +33,28 @@ export interface TeamState {
   /** 直近の同期が失敗した理由（成功すると消える） */
   syncError: string | null;
   lastSyncedAt: number | null;
+  /** 自分の契約（運営者として払っているもの）。なければ null */
+  subscription: Subscription | null;
   /** いまの置き場所の、まだ送っていない変更の数 */
   pending: number;
   /** 端末の内容が同期や切り替えで変わるたびに増える。画面の再読み込みに使う */
   dataVersion: number;
 }
+
+export interface Subscription {
+  /** 契約しているチーム数（枠） */
+  tier: number;
+  /** 期限（ミリ秒） */
+  expiresAt: number;
+  productId: string;
+}
+
+/** 期限を過ぎても有効として扱う時間。サーバーの subscription_grace() と同じにする（更新の知らせが遅れて届くため） */
+const SUBSCRIPTION_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** 契約が有効か（期限内か。期限から1日はまだ有効） */
+export const isSubscribed = (s: Subscription | null, now: number): boolean =>
+  s !== null && s.expiresAt + SUBSCRIPTION_GRACE_MS > now;
 
 let state: TeamState = {
   ready: supabase === null,
@@ -47,6 +66,7 @@ let state: TeamState = {
   syncing: false,
   syncError: null,
   lastSyncedAt: null,
+  subscription: null,
   pending: 0,
   dataVersion: 0,
 };
@@ -111,13 +131,36 @@ export function startSession(): void {
   supabase.auth.onAuthStateChange((_event, session) => {
     const user = session?.user ?? null;
     const changed = (user?.id ?? null) !== state.userId;
+    setCurrentUser(db, user?.id ?? null);
     set({ ready: true, userId: user?.id ?? null, email: user?.email ?? null });
     if (user && changed) {
       void loadProfile();
       void syncNow();
     }
+    // 購入の持ち主を合わせる（失敗しても、サインインそのものは続ける）
+    if (changed) {
+      void import('@/billing/purchases')
+        .then((billing) => (user ? billing.identify(user.id) : billing.forget()))
+        .catch(() => undefined);
+    }
   });
-  void supabase.auth.getSession().then(() => set({ ready: true }));
+  void supabase.auth.getSession().then(({ data }) => {
+    set({ ready: true });
+    if (data.session) void checkAccount();
+  });
+}
+
+/**
+ * サーバーに利用者がまだいるかを確かめる。ほかの端末でアカウントを削除したあとなどは、
+ * 端末に残ったサインインの状態とチームの内容を片づける（通信できないだけのときは何もしない）。
+ */
+async function checkAccount(): Promise<void> {
+  const { error } = await client().auth.getUser();
+  if (!error || ![401, 403, 404].includes(error.status ?? 0)) return;
+  for (const space of listSpaces(db)) purgeSpace(db, space.id);
+  setCurrentSpace(db, null);
+  set({ ...readLocal(), displayName: '', subscription: null, syncError: null, dataVersion: state.dataVersion + 1 });
+  await client().auth.signOut({ scope: 'local' });
 }
 
 /** アプリが前面にいる間だけ、サインインの更新を続ける */
@@ -133,7 +176,67 @@ async function loadProfile(): Promise<void> {
   if (data) set({ displayName: (data.display_name as string) ?? '' });
 }
 
-/** メールアドレスに確認コードを送る（はじめての人は、ここでアカウントができる） */
+/** Appleでサインインを出せるか（iPhoneだけ） */
+export const canSignInWithApple = Platform.OS === 'ios';
+
+/** 利用者がサインインを途中でやめた（エラーとして出さない） */
+export class SignInCanceled extends Error {}
+
+/**
+ * Appleでサインインする。iPhoneの標準の画面で本人確認し、その結果をサーバーに渡す。
+ * 名前が受け取れるのは最初の1回だけなので、そのときにメンバーに見せる名前として入れておく。
+ */
+export async function signInWithApple(): Promise<void> {
+  // ネイティブの部品は、使うときに読み込む（部品のない開発用アプリでも、ほかの画面は動くようにする）
+  const Apple = await import('expo-apple-authentication');
+  let credential;
+  try {
+    credential = await Apple.signInAsync({
+      requestedScopes: [Apple.AppleAuthenticationScope.FULL_NAME, Apple.AppleAuthenticationScope.EMAIL],
+    });
+  } catch (e) {
+    if (typeof e === 'object' && e && 'code' in e && e.code === 'ERR_REQUEST_CANCELED') throw new SignInCanceled();
+    throw e;
+  }
+  if (!credential.identityToken) throw new Error('Appleから本人確認の結果を受け取れませんでした');
+  const { data, error } = await client().auth.signInWithIdToken({ provider: 'apple', token: credential.identityToken });
+  if (error) throw error;
+  const name = [credential.fullName?.familyName, credential.fullName?.givenName].filter(Boolean).join(' ');
+  if (name && data.user) {
+    await client().from('profiles').update({ display_name: name.slice(0, 40) }).eq('id', data.user.id).eq('display_name', '');
+    void loadProfile();
+  }
+}
+
+/** アプリに戻ってくるアドレス（サーバーの「戻り先として許可するアドレス」に入れてある） */
+const AUTH_REDIRECT = 'benchbook://auth';
+
+/** Googleでサインインする。アプリ内のブラウザでGoogleの画面を開き、終わるとアプリに戻る */
+export async function signInWithGoogle(): Promise<void> {
+  const WebBrowser = await import('expo-web-browser');
+  const { data, error } = await client().auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: AUTH_REDIRECT, skipBrowserRedirect: true },
+  });
+  if (error) throw error;
+  if (!data.url) throw new Error('Googleの画面を開けませんでした');
+  const result = await WebBrowser.openAuthSessionAsync(data.url, AUTH_REDIRECT);
+  if (result.type !== 'success') throw new SignInCanceled();
+  // 戻ってきたアドレスの # 以降に、サインインの結果が入っている
+  const params = new URLSearchParams(result.url.split('#')[1] ?? result.url.split('?')[1] ?? '');
+  const failure = params.get('error_description') ?? params.get('error');
+  if (failure) throw new Error(failure);
+  const access = params.get('access_token');
+  const refresh = params.get('refresh_token');
+  if (!access || !refresh) throw new Error('サインインの結果を受け取れませんでした');
+  const session = await client().auth.setSession({ access_token: access, refresh_token: refresh });
+  if (session.error) throw session.error;
+}
+
+/**
+ * メールアドレスに確認コードを送る。開発のときだけ使う
+ * （手元のサーバーでは Apple・Google のサインインを通せないため）。
+ */
 export async function requestCode(email: string): Promise<void> {
   const { error } = await client().auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } });
   if (error) throw error;
@@ -156,7 +259,14 @@ export async function setDisplayName(name: string): Promise<void> {
 export async function signOut(): Promise<void> {
   for (const space of listSpaces(db)) purgeSpace(db, space.id);
   setCurrentSpace(db, null);
-  set({ ...readLocal(), displayName: '', syncError: null, lastSyncedAt: null, dataVersion: state.dataVersion + 1 });
+  set({
+    ...readLocal(),
+    displayName: '',
+    subscription: null,
+    syncError: null,
+    lastSyncedAt: null,
+    dataVersion: state.dataVersion + 1,
+  });
   await client().auth.signOut();
 }
 
@@ -169,7 +279,14 @@ export async function deleteAccount(): Promise<void> {
   if (error) throw error;
   for (const space of listSpaces(db)) purgeSpace(db, space.id);
   setCurrentSpace(db, null);
-  set({ ...readLocal(), displayName: '', syncError: null, lastSyncedAt: null, dataVersion: state.dataVersion + 1 });
+  set({
+    ...readLocal(),
+    displayName: '',
+    subscription: null,
+    syncError: null,
+    lastSyncedAt: null,
+    dataVersion: state.dataVersion + 1,
+  });
   // サーバーの利用者はもういないので、端末のサインイン状態だけを消す
   await client().auth.signOut({ scope: 'local' });
 }
@@ -195,7 +312,10 @@ async function refreshSpaces(): Promise<void> {
   for (const space of listSpaces(db)) {
     if (!keep.has(space.id)) purgeSpace(db, space.id);
   }
+  const wasActive = new Set(listSpaces(db).filter((s) => s.active).map((s) => s.id));
   for (const r of rows) {
+    // 使えなくなったチーム（契約切れ）は、ほかの人が記録した試合を端末から消す
+    if (!r.active && wasActive.has(r.id) && state.userId) dropOthersGames(db, r.id, state.userId);
     const row = {
       id: r.id,
       name: r.name,
@@ -207,9 +327,58 @@ async function refreshSpaces(): Promise<void> {
     };
     db.insert(schema.spaces).values(row).onConflictDoUpdate({ target: schema.spaces.id, set: row }).run();
   }
-  // 開いていたチームが使えなくなったら、個人に戻す
+  // 開いていたチームから外れていたら、個人に戻す（契約切れのチームは、自分の試合だけ見られるので開いたままにする）
   const current = currentSpaceId(db);
-  if (current && !rows.some((r) => r.id === current && r.active)) setCurrentSpace(db, null);
+  if (current && !rows.some((r) => r.id === current)) setCurrentSpace(db, null);
+}
+
+async function loadSubscription(): Promise<void> {
+  const { data, error } = await client().from('subscriptions').select('tier, expires_at, product_id').maybeSingle();
+  if (error) throw error;
+  set({
+    subscription: data
+      ? { tier: data.tier as number, expiresAt: Date.parse(data.expires_at as string), productId: data.product_id as string }
+      : null,
+  });
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * 購入・復元のあとに呼ぶ。契約はストア → RevenueCat → サーバーの順に届くので、
+ * 届くまで少し待ちながら読み直す。届いたら、空いている枠を運営しているチームに割り当てる。
+ * 戻り値は、契約が有効になったか（届かなかったら false。あとで同期すれば反映される）。
+ */
+export async function awaitSubscription(expectedProductId?: string): Promise<boolean> {
+  const matches = () =>
+    isSubscribed(state.subscription, Date.now()) &&
+    (expectedProductId === undefined || state.subscription?.productId === expectedProductId);
+  for (let i = 0; i < 10; i++) {
+    await loadSubscription();
+    if (matches()) break;
+    await wait(2000);
+  }
+  if (!isSubscribed(state.subscription, Date.now())) return false;
+  await syncNow();
+  const tier = state.subscription?.tier ?? 0;
+  const owned = state.spaces.filter((s) => s.role === 'owner' && !s.complimentary);
+  let used = owned.filter((s) => s.slotAssigned).length;
+  for (const space of owned) {
+    if (used >= tier) break;
+    if (space.slotAssigned) continue;
+    const { error } = await client().rpc('set_team_slot', { p_team: space.id, p_assigned: true });
+    if (error) throw error;
+    used++;
+  }
+  await syncNow();
+  return matches();
+}
+
+/** 契約の枠を、チームに割り当てる・外す（運営者だけ） */
+export async function setTeamSlot(teamId: string, assigned: boolean): Promise<void> {
+  const { error } = await client().rpc('set_team_slot', { p_team: teamId, p_assigned: assigned });
+  if (error) throw error;
+  await syncNow();
 }
 
 let running: Promise<void> | null = null;
@@ -224,6 +393,7 @@ export function syncNow(): Promise<void> {
     let received = 0;
     try {
       await refreshSpaces();
+      await loadSubscription();
       const remote = supabaseRemote(client());
       for (const space of listSpaces(db)) {
         if (!space.active) continue;
@@ -275,7 +445,8 @@ export async function createInvite(teamId: string): Promise<string> {
   return data as string;
 }
 
-export const inviteLink = (token: string): string => `benchbook://join/${token}`;
+/** 招待のリンク。アプリが入っている iPhone ではアプリが開き、なければ製品サイトの案内のページが出る */
+export const inviteLink = (token: string): string => `https://arti-lab.jp/products/benchbook/join/${token}`;
 
 /** 貼り付けられた招待のリンク・コードから、コードだけを取り出す */
 export function parseInvite(text: string): string {

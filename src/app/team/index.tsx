@@ -1,16 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { teamEnabled } from '@/sync/client';
 import {
+  SignInCanceled,
   acceptInvite,
+  canSignInWithApple,
   createTeam,
   deleteAccount,
   errorMessage,
+  isSubscribed,
   requestCode,
   setDisplayName,
+  signInWithApple,
+  signInWithGoogle,
   signOut,
   useTeamState,
   verifyCode,
@@ -55,6 +60,79 @@ function Intro() {
 }
 
 function SignIn() {
+  const [busy, setBusy] = useState(false);
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await action();
+    } catch (e) {
+      // 途中でやめたときは、何も出さない
+      if (!(e instanceof SignInCanceled)) showDialog('サインインできませんでした', errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Intro />
+      <SectionTitle>サインイン</SectionTitle>
+      <Card>
+        <Text style={styles.body}>
+          お使いの Apple か Google のアカウントでサインインします。新しくパスワードを作る必要はありません。
+        </Text>
+        <Text style={styles.note}>
+          Apple と Google は、別々のアカウントになります。前にサインインしたことがある場合は、そのときと同じほうを選んでください。
+        </Text>
+        {canSignInWithApple && (
+          <ProviderButton
+            icon="logo-apple"
+            label="Appleでサインイン"
+            dark
+            disabled={busy}
+            onPress={() => void run(signInWithApple)}
+          />
+        )}
+        <ProviderButton icon="logo-google" label="Googleでサインイン" disabled={busy} onPress={() => void run(signInWithGoogle)} />
+        {busy && <ActivityIndicator color={colors.text} />}
+        <Text style={styles.note}>
+          サインインすると、名前とメールアドレスを、チームの管理のために保存します。試合の記録は、チームに送ったものだけがサーバーに保存されます。
+        </Text>
+      </Card>
+      {__DEV__ && <DevEmailSignIn />}
+    </>
+  );
+}
+
+function ProviderButton(props: {
+  icon: 'logo-apple' | 'logo-google';
+  label: string;
+  dark?: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const fg = props.dark ? colors.primaryText : colors.text;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
+      disabled={props.disabled}
+      onPress={props.onPress}
+      style={({ pressed }) => [
+        styles.provider,
+        props.dark ? styles.providerDark : styles.providerLight,
+        (pressed || props.disabled) && styles.pressed,
+      ]}
+    >
+      <Ionicons name={props.icon} size={20} color={fg} />
+      <Text style={[styles.providerText, { color: fg }]}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
+/** 開発のときだけ出す、メールの確認コードでのサインイン（手元のサーバー用） */
+function DevEmailSignIn() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -80,11 +158,10 @@ function SignIn() {
 
   return (
     <>
-      <Intro />
-      <SectionTitle>サインイン</SectionTitle>
+      <SectionTitle>開発用：メールでサインイン</SectionTitle>
       {sentTo === null ? (
         <Card>
-          <Text style={styles.body}>メールアドレスに、6けたの確認コードを送ります。パスワードは要りません。</Text>
+          <Text style={styles.note}>この欄は、開発用のアプリにだけ出ます。</Text>
           <TextInput
             value={email}
             onChangeText={setEmail}
@@ -93,12 +170,16 @@ function SignIn() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
-            autoComplete="email"
             style={ui.input}
             returnKeyType="send"
             onSubmitEditing={send}
           />
-          <Button title={busy ? '送っています…' : '確認コードを送る'} disabled={busy || !/^\S+@\S+\.\S+$/.test(email.trim())} onPress={send} />
+          <Button
+            title={busy ? '送っています…' : '確認コードを送る'}
+            variant="secondary"
+            disabled={busy || !/^\S+@\S+\.\S+$/.test(email.trim())}
+            onPress={send}
+          />
         </Card>
       ) : (
         <Card>
@@ -109,7 +190,6 @@ function SignIn() {
             placeholder="確認コード"
             placeholderTextColor={colors.sub}
             keyboardType="number-pad"
-            autoComplete="one-time-code"
             style={[ui.input, styles.code]}
           />
           <Button title={busy ? '確認しています…' : 'サインインする'} disabled={busy || code.length !== 6} onPress={verify} />
@@ -206,6 +286,8 @@ function SignedIn() {
         </Pressable>
       ))}
 
+      {owned.length > 0 && <PlanCard />}
+
       <SectionTitle>招待で入る</SectionTitle>
       <Card>
         <Text style={styles.body}>チームの人から届いた招待のリンクかコードを、そのまま貼ってください。</Text>
@@ -258,6 +340,47 @@ function SignedIn() {
   );
 }
 
+const formatDate = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+};
+
+/** 運営者の契約の状態 */
+function PlanCard() {
+  const team = useTeamState();
+  const router = useRouter();
+  const [now] = useState(() => Date.now());
+  const paid = team.spaces.filter((s) => s.role === 'owner' && !s.complimentary);
+  const used = paid.filter((s) => s.slotAssigned).length;
+  if (paid.length === 0) return null;
+  const sub = team.subscription;
+  return (
+    <>
+      <SectionTitle>契約</SectionTitle>
+      <Card>
+        {sub && isSubscribed(sub, now) ? (
+          <>
+            <Text style={styles.lead}>チームプラン（{sub.tier}チーム）</Text>
+            <Text style={styles.body}>
+              {formatDate(sub.expiresAt)} まで。{used} / {sub.tier} チームに割り当てています。割り当ては、各チームの画面で入れ替えられます。
+            </Text>
+            <Button title="契約の内容を見る・変える" variant="secondary" small onPress={() => router.push('/team/plan')} />
+          </>
+        ) : (
+          <>
+            <Text style={styles.lead}>契約がありません</Text>
+            <Text style={styles.body}>
+              {sub ? `${formatDate(sub.expiresAt)} に契約が切れました。` : ''}
+              チームをメンバー全員で使うには、チームプランの契約が必要です。
+            </Text>
+            <Button title="料金を見て契約する" variant="accent" onPress={() => router.push('/team/plan')} />
+          </>
+        )}
+      </Card>
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 12, paddingBottom: 40 },
   flex: { flex: 1, minWidth: 0 },
@@ -267,6 +390,17 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: '700', color: colors.sub },
   note: { fontSize: 13, color: colors.sub },
   footer: { marginTop: 8, alignItems: 'center' },
+  provider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    minHeight: 52,
+    borderRadius: radius.md,
+  },
+  providerDark: { backgroundColor: '#000000' },
+  providerLight: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  providerText: { fontSize: 17, fontWeight: '700' },
   code: { fontSize: 24, letterSpacing: 6, textAlign: 'center' },
   teamRow: {
     flexDirection: 'row',
