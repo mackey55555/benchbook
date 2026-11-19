@@ -25,6 +25,8 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: 'jp.arti-lab.benchbook',
     supportsTablet: false,
+    // チームプランのサインイン（Appleでサインイン）
+    usesAppleSignIn: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },
@@ -35,6 +37,8 @@ const config: ExpoConfig = {
     'expo-sharing',
     'expo-screen-orientation',
     'expo-font',
+    'expo-apple-authentication',
+    'expo-web-browser',
     // 濃紺の地に、アイコンとロゴをまとめた画像を中央に置く
     ['expo-splash-screen', { backgroundColor: '#16203a', image: './assets/splash.png', imageWidth: 260 }],
   ],

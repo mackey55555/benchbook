@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { Platform } from 'react-native';
 
 import { db } from '@/db/client';
 import {
@@ -131,7 +132,23 @@ export function startSession(): void {
       void syncNow();
     }
   });
-  void supabase.auth.getSession().then(() => set({ ready: true }));
+  void supabase.auth.getSession().then(({ data }) => {
+    set({ ready: true });
+    if (data.session) void checkAccount();
+  });
+}
+
+/**
+ * サーバーに利用者がまだいるかを確かめる。ほかの端末でアカウントを削除したあとなどは、
+ * 端末に残ったサインインの状態とチームの内容を片づける（通信できないだけのときは何もしない）。
+ */
+async function checkAccount(): Promise<void> {
+  const { error } = await client().auth.getUser();
+  if (!error || ![401, 403, 404].includes(error.status ?? 0)) return;
+  for (const space of listSpaces(db)) purgeSpace(db, space.id);
+  setCurrentSpace(db, null);
+  set({ ...readLocal(), displayName: '', subscription: null, syncError: null, dataVersion: state.dataVersion + 1 });
+  await client().auth.signOut({ scope: 'local' });
 }
 
 /** アプリが前面にいる間だけ、サインインの更新を続ける */
@@ -147,7 +164,67 @@ async function loadProfile(): Promise<void> {
   if (data) set({ displayName: (data.display_name as string) ?? '' });
 }
 
-/** メールアドレスに確認コードを送る（はじめての人は、ここでアカウントができる） */
+/** Appleでサインインを出せるか（iPhoneだけ） */
+export const canSignInWithApple = Platform.OS === 'ios';
+
+/** 利用者がサインインを途中でやめた（エラーとして出さない） */
+export class SignInCanceled extends Error {}
+
+/**
+ * Appleでサインインする。iPhoneの標準の画面で本人確認し、その結果をサーバーに渡す。
+ * 名前が受け取れるのは最初の1回だけなので、そのときにメンバーに見せる名前として入れておく。
+ */
+export async function signInWithApple(): Promise<void> {
+  // ネイティブの部品は、使うときに読み込む（部品のない開発用アプリでも、ほかの画面は動くようにする）
+  const Apple = await import('expo-apple-authentication');
+  let credential;
+  try {
+    credential = await Apple.signInAsync({
+      requestedScopes: [Apple.AppleAuthenticationScope.FULL_NAME, Apple.AppleAuthenticationScope.EMAIL],
+    });
+  } catch (e) {
+    if (typeof e === 'object' && e && 'code' in e && e.code === 'ERR_REQUEST_CANCELED') throw new SignInCanceled();
+    throw e;
+  }
+  if (!credential.identityToken) throw new Error('Appleから本人確認の結果を受け取れませんでした');
+  const { data, error } = await client().auth.signInWithIdToken({ provider: 'apple', token: credential.identityToken });
+  if (error) throw error;
+  const name = [credential.fullName?.familyName, credential.fullName?.givenName].filter(Boolean).join(' ');
+  if (name && data.user) {
+    await client().from('profiles').update({ display_name: name.slice(0, 40) }).eq('id', data.user.id).eq('display_name', '');
+    void loadProfile();
+  }
+}
+
+/** アプリに戻ってくるアドレス（サーバーの「戻り先として許可するアドレス」に入れてある） */
+const AUTH_REDIRECT = 'benchbook://auth';
+
+/** Googleでサインインする。アプリ内のブラウザでGoogleの画面を開き、終わるとアプリに戻る */
+export async function signInWithGoogle(): Promise<void> {
+  const WebBrowser = await import('expo-web-browser');
+  const { data, error } = await client().auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: AUTH_REDIRECT, skipBrowserRedirect: true },
+  });
+  if (error) throw error;
+  if (!data.url) throw new Error('Googleの画面を開けませんでした');
+  const result = await WebBrowser.openAuthSessionAsync(data.url, AUTH_REDIRECT);
+  if (result.type !== 'success') throw new SignInCanceled();
+  // 戻ってきたアドレスの # 以降に、サインインの結果が入っている
+  const params = new URLSearchParams(result.url.split('#')[1] ?? result.url.split('?')[1] ?? '');
+  const failure = params.get('error_description') ?? params.get('error');
+  if (failure) throw new Error(failure);
+  const access = params.get('access_token');
+  const refresh = params.get('refresh_token');
+  if (!access || !refresh) throw new Error('サインインの結果を受け取れませんでした');
+  const session = await client().auth.setSession({ access_token: access, refresh_token: refresh });
+  if (session.error) throw session.error;
+}
+
+/**
+ * メールアドレスに確認コードを送る。開発のときだけ使う
+ * （手元のサーバーでは Apple・Google のサインインを通せないため）。
+ */
 export async function requestCode(email: string): Promise<void> {
   const { error } = await client().auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } });
   if (error) throw error;

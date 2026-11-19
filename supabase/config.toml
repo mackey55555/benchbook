@@ -160,7 +160,7 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000", "benchbook://**"]
+additional_redirect_urls = ["https://127.0.0.1:3000", "benchbook://**", "exp+benchbook://**"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -328,11 +328,19 @@ max_frequency = "5s"
 # Use an external OAuth provider. The full list of providers are: `apple`, `azure`, `bitbucket`,
 # `discord`, `facebook`, `github`, `gitlab`, `google`, `keycloak`, `linkedin_oidc`, `notion`, `twitch`,
 # `twitter`, `x`, `slack`, `spotify`, `workos`, `zoom`.
+# Appleでサインイン：アプリが iPhone の標準の画面で受け取った本人確認の結果を、サーバーで確かめる。
+# client_id はアプリのバンドルID。この方式ではシークレットは要らない
 [auth.external.apple]
-enabled = false
-client_id = ""
-# DO NOT commit your OAuth provider secret to git. Use environment variable substitution instead:
-secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"
+enabled = true
+client_id = "jp.arti-lab.benchbook"
+secret = ""
+
+# Googleでサインイン：アプリ内のブラウザでGoogleの画面を開く。
+# クライアントIDとシークレットは Google Cloud で作り、環境変数で渡す（リポジトリには書かない）
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
 # Overrides the default auth callback URL derived from auth.external_url.
 redirect_uri = ""
 # Overrides the default auth provider URL. Used to support self-hosted gitlab, single-tenant Azure,
@@ -423,12 +431,6 @@ enabled = true
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
 
 # ---------------------------------------------------------------- Benchbook
-# サインインは、Apple・Google・メールアドレスの3つ（docs/SPEC.md 10章）。
-# 手元の開発ではメールアドレスだけを使う（届いたメールは Mailpit http://127.0.0.1:54524 で見られる）。
-# Apple と Google は、クラウドのプロジェクトを作るときに、そのプロジェクトの設定画面で有効にする。
-# アプリ側は端末のサインイン機能でIDトークンを受け取り、signInWithIdToken で渡す方式にする。
-[auth.external.google]
-enabled = false
-client_id = ""
-secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
-skip_nonce_check = false
+# サインインは Apple と Google の2つ（docs/SPEC.md 10章）。設定は上の [auth.external.apple]／[auth.external.google]。
+# メールの確認コードは、開発用のアプリでだけ使う（届いたメールは Mailpit http://127.0.0.1:54524 で見られる）。
+# 手元では Google の値に仮の値を入れる（supabase/.env.example を supabase/.env に写す）。
