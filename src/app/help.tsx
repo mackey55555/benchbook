@@ -6,6 +6,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { db } from '@/db/client';
 import { createPracticeGame, getLiveGame } from '@/db/repo';
 import { PRACTICE_GAME_ID } from '@/domain/practice';
+import { teamEnabled } from '@/sync/client';
 import { Button } from '@/ui/components';
 import { showDialog } from '@/ui/dialog';
 import { Text } from '@/ui/Text';
@@ -155,13 +156,30 @@ const SECTIONS: Section[] = [
   },
 ];
 
+/** チームプランの説明。サーバーにつながるアプリでだけ出す */
+const TEAM_SECTION: Section = {
+  key: 'team',
+  title: 'チームで使う（チームプラン）',
+  icon: 'people-circle-outline',
+  steps: [
+    'チームに入ると、だれかが記録した試合と名簿が、メンバー全員のアプリに届きます。「設定 → チームプラン」から、Apple か Google のアカウントでサインインして始めます。',
+    'チームを作った人が運営者です。チームの画面の「メンバーを招待する」で、招待を送れます。受け取った人は、サインインしてから招待を開くと入れます。',
+    'ホームの上で、「個人」とチームを切り替えます。試合・名簿・分析は、それぞれ別々です。試合は、作ったときに開いていたほうに入ります。',
+    '個人で記録した試合は、終了後に試合の画面の「チームに送る」で、チームへ移せます。',
+    '電波がなくても記録できます。つながったときに、自動で送られます。ホームの切り替えの下に、同期の状態が出ます。',
+    'チームの試合は、メンバーならだれでも直せます。消せるのは、記録した本人と運営者だけです。',
+    '個人の記録はこのiPhoneの中だけにあります。チームの記録はサーバーにも保存されるので、機種変更のあとも、サインインすれば戻ります。',
+  ],
+};
+
 /** 使い方。練習用の試合もここから始められる。?topic= で指定した項目を開いた状態で表示する */
 export default function HelpScreen() {
   const router = useRouter();
   const { topic } = useLocalSearchParams<{ topic?: string }>();
   const [open, setOpen] = useState<string | null>(topic ?? null);
   // 画面の「？」から来たときは、その項目をいちばん上に出す
-  const sections = topic ? [...SECTIONS].sort((a, b) => Number(b.key === topic) - Number(a.key === topic)) : SECTIONS;
+  const all = teamEnabled ? [...SECTIONS, TEAM_SECTION] : SECTIONS;
+  const sections = topic ? [...all].sort((a, b) => Number(b.key === topic) - Number(a.key === topic)) : all;
 
   const startPractice = () => {
     if (getLiveGame(db)) {

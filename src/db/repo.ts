@@ -48,6 +48,29 @@ export function setCurrentSpace(db: Db, spaceId: string | null): void {
     .run();
 }
 
+const USER_KEY = 'user';
+
+/** サインインしている利用者（サーバーの利用者ID）。サインインしていなければ null */
+export function currentUserId(db: Db): string | null {
+  const row = db.select().from(appState).where(eq(appState.key, USER_KEY)).get();
+  return row?.value || null;
+}
+
+export function setCurrentUser(db: Db, userId: string | null): void {
+  db.insert(appState)
+    .values({ key: USER_KEY, value: userId ?? '' })
+    .onConflictDoUpdate({ target: appState.key, set: { value: userId ?? '' } })
+    .run();
+}
+
+/** いま開いている置き場所が、契約切れなどで使えないチームか */
+export function currentSpaceLapsed(db: Db): boolean {
+  const spaceId = currentSpaceId(db);
+  if (!spaceId) return false;
+  const space = db.select().from(spaces).where(eq(spaces.id, spaceId)).get();
+  return !space || !space.active;
+}
+
 const inSpace = (column: typeof teams.spaceId | typeof games.spaceId, spaceId: string | null): SQL =>
   spaceId === null ? isNull(column) : eq(column, spaceId);
 
@@ -315,13 +338,17 @@ export function getLiveGame(db: Db): Game | undefined {
 }
 
 export function listGames(db: Db): GameSummary[] {
+  const lapsed = currentSpaceLapsed(db);
+  const me = currentUserId(db);
   // 練習用の試合は一覧・分析に出さない
   const rows = db
     .select()
     .from(games)
     .where(and(ne(games.id, PRACTICE_GAME_ID), inSpace(games.spaceId, currentSpaceId(db))))
     .orderBy(desc(games.date), desc(games.createdAt))
-    .all();
+    .all()
+    // 使えなくなったチームでは、自分が記録した試合だけを見せる（docs/SPEC.md 10-3）
+    .filter((g) => !lapsed || g.createdBy === null || g.createdBy === me);
   const scoring = db
     .select({ gameId: gameEvents.gameId, side: gameEvents.side, type: gameEvents.type })
     .from(gameEvents)

@@ -7,12 +7,13 @@ import {
   currentSpaceId,
   listSpaces,
   setCurrentSpace,
+  setCurrentUser,
 } from '@/db/repo';
 import * as schema from '@/db/schema';
 import type { Space } from '@/db/schema';
 
 import { supabase } from './client';
-import { pendingCount, purgeSpace, syncSpace } from './engine';
+import { dropOthersGames, pendingCount, purgeSpace, syncSpace } from './engine';
 import { supabaseRemote } from './supabaseRemote';
 
 /**
@@ -126,6 +127,7 @@ export function startSession(): void {
   supabase.auth.onAuthStateChange((_event, session) => {
     const user = session?.user ?? null;
     const changed = (user?.id ?? null) !== state.userId;
+    setCurrentUser(db, user?.id ?? null);
     set({ ready: true, userId: user?.id ?? null, email: user?.email ?? null });
     if (user && changed) {
       void loadProfile();
@@ -300,7 +302,10 @@ async function refreshSpaces(): Promise<void> {
   for (const space of listSpaces(db)) {
     if (!keep.has(space.id)) purgeSpace(db, space.id);
   }
+  const wasActive = new Set(listSpaces(db).filter((s) => s.active).map((s) => s.id));
   for (const r of rows) {
+    // 使えなくなったチーム（契約切れ）は、ほかの人が記録した試合を端末から消す
+    if (!r.active && wasActive.has(r.id) && state.userId) dropOthersGames(db, r.id, state.userId);
     const row = {
       id: r.id,
       name: r.name,
@@ -312,9 +317,9 @@ async function refreshSpaces(): Promise<void> {
     };
     db.insert(schema.spaces).values(row).onConflictDoUpdate({ target: schema.spaces.id, set: row }).run();
   }
-  // 開いていたチームが使えなくなったら、個人に戻す
+  // 開いていたチームから外れていたら、個人に戻す（契約切れのチームは、自分の試合だけ見られるので開いたままにする）
   const current = currentSpaceId(db);
-  if (current && !rows.some((r) => r.id === current && r.active)) setCurrentSpace(db, null);
+  if (current && !rows.some((r) => r.id === current)) setCurrentSpace(db, null);
 }
 
 async function loadSubscription(): Promise<void> {
