@@ -82,6 +82,9 @@ function SignIn() {
         <Text style={styles.body}>
           お使いの Apple か Google のアカウントでサインインします。新しくパスワードを作る必要はありません。
         </Text>
+        <Text style={styles.note}>
+          Apple と Google は、別々のアカウントになります。前にサインインしたことがある場合は、そのときと同じほうを選んでください。
+        </Text>
         {canSignInWithApple && (
           <ProviderButton
             icon="logo-apple"

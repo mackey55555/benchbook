@@ -113,8 +113,12 @@ export default function PlanScreen() {
 
   const restorePurchase = () =>
     run(async () => {
+      const already = subscribed;
       await restore(userId);
-      if (await awaitSubscription()) showDialog('契約を復元しました');
+      if (await awaitSubscription()) {
+        if (already) showDialog('契約は、すでにこのアカウントに入っています', '復元するものはありませんでした。');
+        else showDialog('契約を復元しました');
+      }
       else showDialog('復元できる契約がありません', 'この Apple ID で買った、有効な契約が見つかりませんでした。');
     });
 
