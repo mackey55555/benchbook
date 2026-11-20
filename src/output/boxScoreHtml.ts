@@ -147,6 +147,9 @@ export function buildBoxScoreHtml(input: RunningScoreInput): string {
     finished: game.status === 'finished',
   });
   const total = computeScore(events);
+  // 2チームの行の合計が多いときは、行を低くして、1ページに収める（15名ずつまでは、そのままで収まる）
+  const rosterRows = Math.max(box.A.players.length, box.B.players.length);
+  const compact = rosterRows > 15 ? `.box td { height: ${((5.2 * 15) / rosterRows).toFixed(2)}mm; line-height: 1; }` : '';
   const periods = computePeriodScores(events, Math.max(game.currentPeriod, RULES.regulationPeriods));
   const mark = (side: Side) => {
     const other = side === 'A' ? 'B' : 'A';
@@ -165,7 +168,7 @@ export function buildBoxScoreHtml(input: RunningScoreInput): string {
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=794, user-scalable=yes">
 <title>${esc(game.teamAName)} vs ${esc(game.teamBName)} BOXSCORE</title>
-<style>${CSS}</style></head>
+<style>${CSS}${compact}</style></head>
 <body><div class="sheet">
 <div class="head">
 <div><h1>BOXSCORE</h1><div class="sub">【ボックススコア】ベンチ控え</div></div>

@@ -89,23 +89,23 @@ describe('チーム・選手マスタ', () => {
 });
 
 describe('試合準備', () => {
-  it('自チームの有効な選手が出場登録に入る（最大15名、スナップショット）', () => {
+  it('自チームの有効な選手が出場登録に入る（最大20名、スナップショット）', () => {
     const { db } = openTestDb();
     const own = ensureOwnTeam(db);
-    for (let n = 1; n <= 17; n++) addPlayer(db, own.id, { number: String(n), name: `P${n}` });
+    for (let n = 1; n <= 22; n++) addPlayer(db, own.id, { number: String(n), name: `P${n}` });
     const game = createGame(db);
     const roster = listRoster(db, game.id);
-    expect(roster).toHaveLength(15);
+    expect(roster).toHaveLength(20);
     expect(roster.every((r) => r.side === 'A' && r.playerId !== null)).toBe(true);
     expect(getGame(db, game.id)?.status).toBe('prep');
   });
 
-  it('出場登録は15名まで、スターターは5名まで、キャプテンは1名', () => {
+  it('出場登録は20名まで、スターターは5名まで、キャプテンは1名', () => {
     const { db } = openTestDb();
     ensureOwnTeam(db);
     const game = createGame(db);
-    for (let n = 1; n <= 15; n++) addRosterEntry(db, game.id, 'B', { number: String(n) });
-    expect(() => addRosterEntry(db, game.id, 'B', { number: '16' })).toThrow(/最大15名/);
+    for (let n = 1; n <= 20; n++) addRosterEntry(db, game.id, 'B', { number: String(n) });
+    expect(() => addRosterEntry(db, game.id, 'B', { number: '21' })).toThrow(/最大20名/);
     const roster = listRoster(db, game.id);
     for (const r of roster.slice(0, 5)) setStarter(db, r.id, true);
     expect(() => setStarter(db, roster[5].id, true)).toThrow(/5名まで/);
