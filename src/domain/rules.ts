@@ -16,8 +16,8 @@ export const RULES = {
   regulationPeriods: 4,
   defaultPeriodMinutes: 10,
   defaultOvertimeMinutes: 5,
-  /** 出場登録できる人数の上限。大会によっては12名を超えるので、15名まで受ける */
-  maxRosterSize: 15,
+  /** 出場登録できる人数の上限。大会によっては12名を超えるので、20名まで受ける */
+  maxRosterSize: 20,
   /** 標準の登録人数。入力画面の選手ボタンとスコアシートは、この人数分の枠を基本にして、超えた分だけ行を足す */
   standardRosterSize: 12,
   startersCount: 5,

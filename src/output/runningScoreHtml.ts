@@ -244,9 +244,10 @@ export function buildRunningScoreHtml(input: RunningScoreInput): string {
   const total = computeScore(events);
   // 出場登録が標準（12名）を超えるときは、選手の行を低くして、1ページに収める
   const rosterRows = Math.max(...(['A', 'B'] as const).map((side) => input.roster.filter((r) => r.side === side).length));
+  const rowMm = (4.1 * RULES.standardRosterSize) / rosterRows;
   const compact =
     rosterRows > RULES.standardRosterSize
-      ? `.players td { height: ${((4.1 * RULES.standardRosterSize) / rosterRows).toFixed(2)}mm; font-size: 6.5pt; }`
+      ? `.players td { height: ${rowMm.toFixed(2)}mm; line-height: 1; font-size: ${Math.min(6.5, rowMm * 2.4).toFixed(1)}pt; }`
       : '';
   return `<!DOCTYPE html>
 <html lang="ja"><head><meta charset="utf-8">
