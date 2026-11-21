@@ -28,6 +28,7 @@ import {
 import { clockSeconds, clockStamp, clockToDigits, isClockRunning, isClockUsed } from '@/domain/clock';
 import { PRACTICE_GAME_ID, practiceStep } from '@/domain/practice';
 import { ON_COURT_MAX, clockDigitsLabel, parseClockDigits, periodSeconds } from '@/domain/lineup';
+import { layoutPlayerGrid } from '@/domain/playerGrid';
 import { RULES, activeEvents, periodLabel } from '@/domain/rules';
 import { deriveGameState, describeEvent, type PlayerState, type TeamState } from '@/domain/stats';
 import {
@@ -53,7 +54,6 @@ const BENCH = 'bench';
 const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'];
 type Selection = { side: Side; rosterId: string };
 
-const GRID_COLUMNS = 3;
 
 type ActionCell =
   | { kind: 'event'; type: EventType; label: string; tone: 'made' | 'miss' | 'stat' }
@@ -359,7 +359,7 @@ export default function LiveScreen() {
     setSelected((cur) => (cur?.side === side && cur.rosterId === rosterId ? null : { side, rosterId }));
   };
 
-  const playerButton = (side: Side, p: PlayerState) => {
+  const playerButton = (side: Side, p: PlayerState, compact: boolean) => {
     const out = p.status === 'fouledOut' || p.status === 'disqualified';
     const active = selected?.side === side && selected.rosterId === p.roster.id;
     const warn = p.status === 'warning';
@@ -399,6 +399,7 @@ export default function LiveScreen() {
           style={[
             styles.number,
             benched && styles.numberBenched,
+            compact && styles.numberCompact,
             active && { color: colors.primaryText },
             out && { color: colors.disabled },
           ]}
@@ -406,7 +407,7 @@ export default function LiveScreen() {
           {p.roster.number}
         </Text>
         {out ? (
-          <Text style={[styles.outText, p.onCourt && { color: colors.danger }]}>
+          <Text style={[styles.outText, compact && styles.outTextCompact, p.onCourt && { color: colors.danger }]}>
             {STATUS_TEXT[p.status as 'fouledOut' | 'disqualified']}
             {p.onCourt ? '・要交代' : ''}
           </Text>
@@ -415,6 +416,7 @@ export default function LiveScreen() {
             <Text
               style={[
                 styles.foulCount,
+                compact && styles.foulCountCompact,
                 warn && { color: colors.warn },
                 active && { color: colors.primaryText },
               ]}
@@ -430,10 +432,7 @@ export default function LiveScreen() {
   const teamPanel = (side: Side) => {
     const team: TeamState = state[side];
     const benchActive = selected?.side === side && selected.rosterId === BENCH;
-    const players = team.players.slice(0, RULES.maxRosterSize).map((p) => playerButton(side, p));
-    const rows = Array.from({ length: Math.ceil(RULES.maxRosterSize / GRID_COLUMNS) }, (_, r) =>
-      players.slice(r * GRID_COLUMNS, (r + 1) * GRID_COLUMNS),
-    );
+    const rows = layoutPlayerGrid(team.players.slice(0, RULES.maxRosterSize), team.lineupTracked);
     const benchFouls = team.coach.C + team.coach.B;
     return (
       <View style={styles.team}>
@@ -458,8 +457,11 @@ export default function LiveScreen() {
           <Text style={styles.infoLabel}>TO 残り{team.timeoutsRemaining}</Text>
         </View>
         {rows.map((row, r) => (
-          <View key={r} style={styles.gridRow}>
-            {Array.from({ length: GRID_COLUMNS }, (_, c) => row[c] ?? <View key={`e${c}`} style={styles.cellEmpty} />)}
+          <View key={r} style={[styles.gridRow, { flex: row.weight }]}>
+            {Array.from({ length: row.columns }, (_, c) => {
+              const p = row.items[c];
+              return p ? playerButton(side, p, row.compact) : <View key={`e${c}`} style={styles.cellEmpty} />;
+            })}
           </View>
         ))}
         <View style={styles.teamButtons}>
@@ -1202,6 +1204,10 @@ const styles = StyleSheet.create({
   sheetLabel: { width: 44, fontSize: 14, color: colors.sub },
   cellBenched: { backgroundColor: colors.disabledBg, borderColor: colors.disabledBg, opacity: 0.75 },
   numberBenched: { fontSize: 22, color: colors.sub },
+  // ベンチの選手の小さいボタン
+  numberCompact: { fontSize: 17, lineHeight: 19 },
+  foulCountCompact: { top: 0, right: 3, fontSize: 9 },
+  outTextCompact: { bottom: 0, fontSize: 8 },
   subSheet: { width: 640, maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 14, gap: 8 },
   subCount: { fontSize: 16, fontWeight: '800', color: colors.text },
   subClock: { width: 76, textAlign: 'center', fontSize: 30, color: colors.text },
