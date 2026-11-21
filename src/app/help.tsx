@@ -10,7 +10,7 @@ import { teamEnabled } from '@/sync/client';
 import { Button } from '@/ui/components';
 import { showDialog } from '@/ui/dialog';
 import { Text } from '@/ui/Text';
-import { colors, radius } from '@/ui/theme';
+import { colors, radius, page } from '@/ui/theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -150,7 +150,7 @@ const SECTIONS: Section[] = [
     title: '記録を守る（バックアップ）',
     icon: 'shield-checkmark-outline',
     steps: [
-      '記録はこのiPhoneの中だけに保存されます。アプリを消すと、記録も消えます。',
+      '記録はこの端末の中だけに保存されます。アプリを消すと、記録も消えます。',
       '機種変更の前や、大事な試合のあとは、「設定 → バックアップ」の「全データを書き出す」で、ファイルにして保存してください。',
       '新しい端末では、同じ画面の「読み込む」で、そのファイルから記録を戻せます。',
     ],
@@ -169,7 +169,7 @@ const TEAM_SECTION: Section = {
     '個人で記録した試合は、終了後にチームへ移せます。試合の一覧で長押しして「チームに送る」を選ぶか、試合の画面のいちばん下の「チームに送る」を押します。',
     '電波がなくても記録できます。つながったときに、自動で送られます。ホームの切り替えの下に、同期の状態が出ます。',
     'チームの試合は、メンバーならだれでも直せます。消せるのは、記録した本人と運営者だけです。',
-    '個人の記録はこのiPhoneの中だけにあります。チームの記録はサーバーにも保存されるので、機種変更のあとも、サインインすれば戻ります。',
+    '個人の記録はこの端末の中だけにあります。チームの記録はサーバーにも保存されるので、機種変更のあとも、サインインすれば戻ります。',
   ],
 };
 
@@ -242,7 +242,7 @@ export default function HelpScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, gap: 10, paddingBottom: 40 },
+  container: { ...page, padding: 20, gap: 10, paddingBottom: 40 },
   pressed: { opacity: 0.6 },
   practice: { backgroundColor: colors.primary, borderRadius: radius.xl, padding: 20, gap: 10, marginBottom: 4 },
   practiceTitle: { fontSize: 18, fontWeight: '800', color: colors.primaryText },

@@ -62,3 +62,12 @@ export const radius = { sm: 10, md: 14, lg: 20, xl: 24 } as const;
 
 /** タップ対象の最小サイズ（SPEC 5-4） */
 export const MIN_TAP = 56;
+
+/**
+ * 縦に読む画面の中身の幅。iPadでは横に広がりすぎないよう、上限を付けて中央に寄せる。
+ * iPhoneではこの上限に届かないので、見た目は変わらない。
+ */
+export const page = { width: '100%', maxWidth: 720, alignSelf: 'center' } as const;
+
+/** スコアシートや表を出す画面の幅の上限。紙面を大きく見せたいので、ほかの画面より広くする */
+export const WIDE_PAGE_WIDTH = 960;

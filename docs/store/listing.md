@@ -83,6 +83,12 @@ Benchbook は、バスケットボールのベンチで「控えのスコア」�
 
 画面はAndroidエミュレータで撮影し、上部のステータスバーをiPhone風に描き直している。数値はデモ用のデータ。
 
+### iPad対応のビルドを出すとき
+
+- iPad用のスクリーンショット（13インチ：2064×2752、横なら2752×2064）が必要。まだ作っていない
+- 説明文の「iPhone 1台で」は、「iPhone・iPad」に直す
+- 一度iPad対応で公開すると、あとのバージョンでiPadを外すことはできない
+
 ## 審査メモ（審査担当者向け、英語）
 
 This app works fully offline and requires no account. To try it: tap "新規試合" (New game) on the home screen, add a few jersey numbers for each team, then tap "試合開始" (Start). The live input screen is landscape-only by design.

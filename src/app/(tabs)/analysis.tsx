@@ -27,7 +27,7 @@ import { HelpButton } from '@/ui/HelpButton';
 import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
-import { colors, radius } from '@/ui/theme';
+import { colors, radius, page } from '@/ui/theme';
 import { paywallEnabled } from '@/sync/client';
 import { FREE_ANALYSIS_GAMES, useAnalysis, useAnalysisLimit } from '@/ui/useAnalysis';
 
@@ -468,7 +468,7 @@ function PlayersView(props: {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, gap: 12, paddingBottom: 32 },
+  container: { ...page, padding: 20, gap: 12, paddingBottom: 32 },
   flex: { flex: 1, minWidth: 0 },
   title: { fontSize: 26, fontWeight: '800', color: colors.text },
   label: { width: 34, fontSize: 12, fontWeight: '700', color: colors.sub },

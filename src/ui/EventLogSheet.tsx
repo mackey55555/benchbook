@@ -29,7 +29,7 @@ import {
 
 import { Button, Chip, Row, SectionTitle, Segmented } from './components';
 import { Text } from './Text';
-import { colors, sideColor } from './theme';
+import { colors, page, sideColor } from './theme';
 import { attempt } from './useGame';
 import { DialogHost, showDialog } from './dialog';
 
@@ -459,10 +459,10 @@ export function EventLogSheet(props: {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingVertical: 8 },
+  header: { ...page, paddingHorizontal: 16, paddingVertical: 8 },
   title: { fontSize: 18, fontWeight: '700', color: colors.text },
-  filters: { flexGrow: 0, paddingHorizontal: 16, marginBottom: 8 },
-  list: { paddingHorizontal: 16, paddingBottom: 24, gap: 6 },
+  filters: { ...page, flexGrow: 0, paddingHorizontal: 16, marginBottom: 8 },
+  list: { ...page, paddingHorizontal: 16, paddingBottom: 24, gap: 6 },
   empty: { color: colors.sub, paddingVertical: 16 },
   divider: { textAlign: 'center', color: colors.sub, fontSize: 12, paddingVertical: 6 },
   item: {
@@ -478,7 +478,7 @@ const styles = StyleSheet.create({
   markText: { color: colors.accentText },
   period: { width: 36, fontSize: 12, color: colors.sub, fontWeight: '700' },
   desc: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
-  editor: { paddingHorizontal: 16, paddingBottom: 24, gap: 8 },
+  editor: { ...page, paddingHorizontal: 16, paddingBottom: 24, gap: 8 },
   editTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   editButtons: { marginTop: 12 },

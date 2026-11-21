@@ -19,6 +19,7 @@ import { Text } from '@/ui/Text';
 import { colors, fonts } from '@/ui/theme';
 
 import migrations from '../../drizzle/migrations';
+import { isTablet } from '@/ui/device';
 import { DialogHost } from '@/ui/dialog';
 import { SyncHost } from '@/ui/SyncHost';
 
@@ -29,6 +30,7 @@ void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 /**
  * 画面の向きは画面単位で制御する。既定は縦向き、試合中入力とQ照合は横向き固定。
+ * iPadでは、既定の画面を縦横どちらでも使える（置いたまま・キーボード付きのケースで使うことが多いため）。
  */
 export default function RootLayout() {
   const { success, error } = useMigrations(expoDb, migrations);
@@ -59,7 +61,9 @@ export default function RootLayout() {
     ScreenOrientation.lockAsync(
       landscape
         ? ScreenOrientation.OrientationLock.LANDSCAPE
-        : ScreenOrientation.OrientationLock.PORTRAIT_UP,
+        : isTablet
+          ? ScreenOrientation.OrientationLock.ALL
+          : ScreenOrientation.OrientationLock.PORTRAIT_UP,
     ).catch(() => undefined);
   }, [landscape]);
 
@@ -78,7 +82,7 @@ export default function RootLayout() {
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
-          orientation: 'portrait',
+          orientation: isTablet ? 'all' : 'portrait',
           headerBackTitle: '戻る',
           headerStyle: { backgroundColor: colors.bg },
           headerShadowVisible: false,

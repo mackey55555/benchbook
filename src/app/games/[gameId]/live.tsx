@@ -39,6 +39,7 @@ import {
   type Side,
 } from '@/domain/types';
 import { Button, Chip, Row } from '@/ui/components';
+import { z } from '@/ui/device';
 import { DEFAULT_FT, EventLogSheet } from '@/ui/EventLogSheet';
 import { FoulBoard } from '@/ui/FoulBoard';
 import { GameClock } from '@/ui/GameClock';
@@ -671,7 +672,7 @@ export default function LiveScreen() {
           <Text style={styles.foulsButtonText}>スコア</Text>
         </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="メニュー" onPress={menu} hitSlop={8} style={styles.menu}>
-          <Ionicons name="ellipsis-horizontal" size={20} color={colors.primaryText} />
+          <Ionicons name="ellipsis-horizontal" size={z(20)} color={colors.primaryText} />
         </Pressable>
       </View>
 
@@ -742,7 +743,7 @@ export default function LiveScreen() {
               onPress={undo}
               style={[styles.util, styles.undo, step?.target === 'undo' && styles.utilHint]}
             >
-              <Ionicons name="arrow-undo" size={16} color={colors.warn} />
+              <Ionicons name="arrow-undo" size={z(16)} color={colors.warn} />
               <Text style={[styles.utilText, styles.utilShrink, { color: colors.warn }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                 取り消す
               </Text>
@@ -755,7 +756,7 @@ export default function LiveScreen() {
               // 第4Qは「残り2分」が並んで狭くなるので、旗だけにして幅をゆずる
               style={[styles.util, period === RULES.regulationPeriods && styles.utilNarrow]}
             >
-              <Ionicons name="flag" size={14} color={colors.accentInk} />
+              <Ionicons name="flag" size={z(14)} color={colors.accentInk} />
               {period !== RULES.regulationPeriods && (
                 <Text style={styles.utilText} numberOfLines={1}>
                   印
@@ -1090,28 +1091,28 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingBottom: 2,
   },
-  sideBar: { width: 8, height: 26, borderRadius: 4 },
-  topName: { flex: 1, minWidth: 0, fontSize: 15, fontWeight: '800', color: colors.primaryText },
+  sideBar: { width: z(8), height: z(26), borderRadius: 4 },
+  topName: { flex: 1, minWidth: z(0), fontSize: z(15), fontWeight: '800', color: colors.primaryText },
   textRight: { textAlign: 'right' },
-  topScore: { fontSize: 38, lineHeight: 44, minWidth: 44, textAlign: 'center', color: colors.primaryText },
-  foulsButton: { height: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: colors.inkSoft, justifyContent: 'center' },
-  foulsButtonText: { fontSize: 12, fontWeight: '800', color: colors.primaryText },
-  menu: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.inkSoft, alignItems: 'center', justifyContent: 'center' },
+  topScore: { fontSize: z(38), lineHeight: z(44), minWidth: z(44), textAlign: 'center', color: colors.primaryText },
+  foulsButton: { height: z(36), paddingHorizontal: 12, borderRadius: 18, backgroundColor: colors.inkSoft, justifyContent: 'center' },
+  foulsButtonText: { fontSize: z(12), fontWeight: '800', color: colors.primaryText },
+  menu: { width: z(36), height: z(36), borderRadius: 18, backgroundColor: colors.inkSoft, alignItems: 'center', justifyContent: 'center' },
   main: { flex: 1, flexDirection: 'row', gap: 10, paddingTop: 6 },
   team: { flex: 1, gap: GAP },
   center: { flex: 1.5, gap: GAP },
-  teamInfo: { height: 20, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  infoLabel: { fontSize: 12, fontWeight: '800', color: colors.text },
-  infoCount: { fontSize: 16, lineHeight: 18, color: colors.text },
+  teamInfo: { height: z(20), flexDirection: 'row', alignItems: 'center', gap: 5 },
+  infoLabel: { fontSize: z(12), fontWeight: '800', color: colors.text },
+  infoCount: { fontSize: z(16), lineHeight: z(18), color: colors.text },
   dots: { flexDirection: 'row', gap: 3 },
-  foulDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.disabled },
-  bonus: { fontSize: 11, fontWeight: '800', color: colors.danger },
-  teamButtons: { height: 38, flexDirection: 'row', gap: GAP },
+  foulDot: { width: z(9), height: z(9), borderRadius: 5, backgroundColor: colors.disabled },
+  bonus: { fontSize: z(11), fontWeight: '800', color: colors.danger },
+  teamButtons: { height: z(38), flexDirection: 'row', gap: GAP },
   teamButton: { flex: 1, borderRadius: 12, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
-  teamButtonText: { fontSize: 13, fontWeight: '800', color: colors.text },
-  teamButtonSub: { fontSize: 9, fontWeight: '800', color: colors.sub },
+  teamButtonText: { fontSize: z(13), fontWeight: '800', color: colors.text },
+  teamButtonSub: { fontSize: z(9), fontWeight: '800', color: colors.sub },
   strip: {
-    height: 34,
+    height: z(34),
     borderRadius: 12,
     backgroundColor: colors.card,
     flexDirection: 'row',
@@ -1119,11 +1120,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     gap: 8,
   },
-  stripMain: { fontSize: 14, fontWeight: '800', color: colors.text },
+  stripMain: { fontSize: z(14), fontWeight: '800', color: colors.text },
   // 練習の案内。次に押す場所は、同じ色の太い枠で示す
   stripPractice: { backgroundColor: colors.accent },
   stripStep: {
-    fontSize: 11,
+    fontSize: z(11),
     fontWeight: '800',
     color: colors.primaryText,
     backgroundColor: colors.primary,
@@ -1132,18 +1133,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
   },
-  stripGuide: { flex: 1, minWidth: 0, color: colors.accentText },
+  stripGuide: { flex: 1, minWidth: z(0), color: colors.accentText },
   stripSkip: { paddingHorizontal: 6, paddingVertical: 4 },
-  stripSkipText: { fontSize: 12, fontWeight: '800', color: colors.accentText, textDecorationLine: 'underline' },
+  stripSkipText: { fontSize: z(12), fontWeight: '800', color: colors.accentText, textDecorationLine: 'underline' },
   hint: { borderColor: colors.accent, borderWidth: 4 },
   hintOnInk: { borderColor: colors.accent, borderWidth: 3 },
   utilHint: { borderColor: colors.primary, borderWidth: 3 },
-  stripNotice: { flex: 1, minWidth: 0, color: colors.warn },
+  stripNotice: { flex: 1, minWidth: z(0), color: colors.warn },
   markCount: {
-    minWidth: 18,
+    minWidth: z(18),
     textAlign: 'center',
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: z(12),
+    lineHeight: z(18),
     color: colors.accentText,
     backgroundColor: colors.accent,
     borderRadius: 9,
@@ -1151,9 +1152,9 @@ const styles = StyleSheet.create({
   },
   scoreSheet: { borderRadius: 12, overflow: 'hidden', backgroundColor: colors.card },
   webview: { flex: 1, backgroundColor: colors.card },
-  clockDisplay: { minWidth: 96, textAlign: 'center', fontSize: 34, color: colors.text },
-  stripRecent: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 12, fontWeight: '700', color: colors.mute },
-  utilRow: { height: 40, flexDirection: 'row', gap: GAP },
+  clockDisplay: { minWidth: z(96), textAlign: 'center', fontSize: z(34), color: colors.text },
+  stripRecent: { flex: 1, minWidth: z(0), textAlign: 'right', fontSize: z(12), fontWeight: '700', color: colors.mute },
+  utilRow: { height: z(40), flexDirection: 'row', gap: GAP },
   util: {
     flex: 1,
     borderRadius: 12,
@@ -1165,9 +1166,9 @@ const styles = StyleSheet.create({
   },
   utilNarrow: { flex: 0.5 },
   utilShrink: { flexShrink: 1 },
-  utilText: { fontSize: 13, fontWeight: '800', color: colors.text },
+  utilText: { fontSize: z(13), fontWeight: '800', color: colors.text },
   undo: { backgroundColor: colors.warnBg },
-  toSide: { fontSize: 10, fontWeight: '800' },
+  toSide: { fontSize: z(10), fontWeight: '800' },
   gridRow: { flex: 1, flexDirection: 'row', gap: GAP },
   cell: {
     flex: 1,
@@ -1180,18 +1181,18 @@ const styles = StyleSheet.create({
   player: { backgroundColor: colors.card, borderColor: colors.card },
   cellWarn: { backgroundColor: colors.warnBg, borderColor: colors.warnBg },
   cellOut: { backgroundColor: colors.disabledBg, borderColor: colors.disabledBg },
-  number: { fontSize: 28, lineHeight: 30, color: colors.text },
-  foulCount: { position: 'absolute', top: 2, right: 6, fontSize: 11, fontWeight: '700', color: colors.sub },
-  outText: { position: 'absolute', bottom: 1, fontSize: 10, fontWeight: '700', color: colors.sub },
+  number: { fontSize: z(28), lineHeight: z(30), color: colors.text },
+  foulCount: { position: 'absolute', top: 2, right: 6, fontSize: z(11), fontWeight: '700', color: colors.sub },
+  outText: { position: 'absolute', bottom: 1, fontSize: z(10), fontWeight: '700', color: colors.sub },
   action: { backgroundColor: colors.card, borderColor: colors.card },
   actionMade: { backgroundColor: colors.primary, borderColor: colors.primary },
   actionMiss: { borderColor: colors.primary },
   actionDisabled: { opacity: 0.35 },
-  actionText: { fontSize: 17, fontWeight: '800', color: colors.text },
+  actionText: { fontSize: z(17), fontWeight: '800', color: colors.text },
   pressed: { opacity: 0.5 },
   foul: { backgroundColor: colors.dangerBg, borderColor: colors.dangerBg },
-  foulText: { fontSize: 18, fontWeight: '800', color: colors.dangerInk },
-  foulHint: { fontSize: 9, color: colors.dangerInk },
+  foulText: { fontSize: z(18), fontWeight: '800', color: colors.dangerInk },
+  foulHint: { fontSize: z(9), color: colors.dangerInk },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(22,32,58,0.5)',
@@ -1199,39 +1200,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 16,
   },
-  sheet: { width: 380, maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 18, gap: 12 },
-  sheetTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
-  sheetLabel: { width: 44, fontSize: 14, color: colors.sub },
+  sheet: { width: z(380), maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 18, gap: 12 },
+  sheetTitle: { fontSize: z(17), fontWeight: '800', color: colors.text },
+  sheetLabel: { width: z(44), fontSize: z(14), color: colors.sub },
   cellBenched: { backgroundColor: colors.disabledBg, borderColor: colors.disabledBg, opacity: 0.75 },
-  numberBenched: { fontSize: 22, color: colors.sub },
+  numberBenched: { fontSize: z(22), color: colors.sub },
   // ベンチの選手の小さいボタン
-  numberCompact: { fontSize: 17, lineHeight: 19 },
-  foulCountCompact: { top: 0, right: 3, fontSize: 9 },
-  outTextCompact: { bottom: 0, fontSize: 8 },
-  subSheet: { width: 640, maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 14, gap: 8 },
-  subCount: { fontSize: 16, fontWeight: '800', color: colors.text },
-  subClock: { width: 76, textAlign: 'center', fontSize: 30, color: colors.text },
+  numberCompact: { fontSize: z(17), lineHeight: z(19) },
+  foulCountCompact: { top: 0, right: 3, fontSize: z(9) },
+  outTextCompact: { bottom: 0, fontSize: z(8) },
+  subSheet: { width: z(640), maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 14, gap: 8 },
+  subCount: { fontSize: z(16), fontWeight: '800', color: colors.text },
+  subClock: { width: z(76), textAlign: 'center', fontSize: z(30), color: colors.text },
   subKey: {
-    width: 38,
-    height: 40,
+    width: z(38),
+    height: z(40),
     borderRadius: 10,
     backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  subKeyText: { fontSize: 22, color: colors.text },
-  subHint: { fontSize: 11, color: colors.sub },
-  subError: { fontSize: 13, fontWeight: '700', color: colors.danger },
-  padSheet: { width: 440, maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 16, gap: 10 },
-  padDisplay: { minWidth: 64, textAlign: 'center', fontSize: 34, color: colors.text },
+  subKeyText: { fontSize: z(22), color: colors.text },
+  subHint: { fontSize: z(11), color: colors.sub },
+  subError: { fontSize: z(13), fontWeight: '700', color: colors.danger },
+  padSheet: { width: z(440), maxWidth: '100%', backgroundColor: colors.card, borderRadius: radius.lg, padding: 16, gap: 10 },
+  padDisplay: { minWidth: z(64), textAlign: 'center', fontSize: z(34), color: colors.text },
   padGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   padKey: {
-    width: 62,
-    height: 52,
+    width: z(62),
+    height: z(52),
     borderRadius: 12,
     backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  padKeyText: { fontSize: 26, color: colors.text },
+  padKeyText: { fontSize: z(26), color: colors.text },
 });

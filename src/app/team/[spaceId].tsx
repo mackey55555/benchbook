@@ -21,7 +21,7 @@ import {
 import { Button, Card, CommitInput, Row, SectionTitle } from '@/ui/components';
 import { showDialog } from '@/ui/dialog';
 import { Text } from '@/ui/Text';
-import { colors } from '@/ui/theme';
+import { colors, page } from '@/ui/theme';
 
 /** チーム1つの画面。状態、メンバー、招待、退出・削除 */
 export default function TeamScreen() {
@@ -232,7 +232,7 @@ function SlotCard(props: { spaceId: string; busy: boolean; run: (action: () => P
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12, paddingBottom: 40 },
+  container: { ...page, padding: 16, gap: 12, paddingBottom: 40 },
   name: { fontSize: 18, fontWeight: '800', color: colors.text },
   body: { fontSize: 14, lineHeight: 21, color: colors.text },
   note: { fontSize: 13, color: colors.sub },

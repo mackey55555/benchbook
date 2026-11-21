@@ -16,7 +16,7 @@ import { Button, SectionTitle } from '@/ui/components';
 import { GameRow, useOpenGame } from '@/ui/GameRow';
 import { SpaceSwitcher } from '@/ui/SpaceSwitcher';
 import { Text } from '@/ui/Text';
-import { colors, radius } from '@/ui/theme';
+import { colors, radius, page } from '@/ui/theme';
 import { useRefresh } from '@/ui/useGame';
 
 // 起動直後に一度だけ、進行中の試合へ直接戻る（SPEC 7章）
@@ -224,7 +224,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, gap: 14, paddingBottom: 32 },
+  container: { ...page, padding: 20, gap: 14, paddingBottom: 32 },
   flex: { flex: 1, minWidth: 0 },
   right: { alignItems: 'flex-end' },
   pressed: { opacity: 0.6 },

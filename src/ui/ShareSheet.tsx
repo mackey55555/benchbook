@@ -9,7 +9,7 @@ import { shareImage, sharePdf } from '@/lib/share';
 import { Button, Row } from './components';
 import { DialogHost, showDialog } from './dialog';
 import { Text } from './Text';
-import { colors } from './theme';
+import { WIDE_PAGE_WIDTH, colors } from './theme';
 
 /** HTMLの横幅（px）。A4を96dpiで表した幅で、viewport と揃える */
 const SHEET_WIDTH = 794;
@@ -28,7 +28,7 @@ export function ShareSheet(props: { visible: boolean; html: string; name: string
   const [busy, setBusy] = useState(false);
   const [contentHeight, setContentHeight] = useState<number | null>(null);
 
-  const sheetWidth = width - 24;
+  const sheetWidth = Math.min(width, WIDE_PAGE_WIDTH) - 24;
   const scale = sheetWidth / SHEET_WIDTH;
   // 内容がA4より短くても、1枚分の高さは確保する
   const sheetHeight = Math.max(sheetWidth * A4_RATIO, (contentHeight ?? 0) * scale);
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   header: { paddingHorizontal: 12, paddingVertical: 8 },
   title: { fontSize: 18, fontWeight: '800', color: colors.text },
-  body: { padding: 12, gap: 8 },
+  body: { width: '100%', maxWidth: WIDE_PAGE_WIDTH, alignSelf: 'center', padding: 12, gap: 8 },
   sheet: { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
   webview: { flex: 1, backgroundColor: colors.card },
   note: { fontSize: 12, color: colors.sub },
