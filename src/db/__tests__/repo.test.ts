@@ -25,6 +25,7 @@ import {
   getGame,
   getGameBundle,
   getLiveGame,
+  insertEvent,
   listEvents,
   listGames,
   listPlayers,
@@ -36,6 +37,7 @@ import {
   resetClock,
   saveRosterAsTeam,
   setClock,
+  setEventClock,
   startClock,
   stopClock,
   toggleMark,
@@ -714,5 +716,97 @@ describe('時計', () => {
     const fixed = replaceEvent(db, e.id, { rosterId: id('A', '5') });
     expect(fixed.clockSeconds).toBe(392);
     expect(describeEvent(fixed, listRoster(db, game.id))).toBe('A #5 2P○ 6:32');
+  });
+});
+
+describe('ログからの時間の修正と、途中への追加', () => {
+  const active = (db: Db, gameId: string) => listEvents(db, gameId).filter((e) => e.voidedAt === null);
+  const texts = (db: Db, gameId: string) => active(db, gameId).map((e) => describeEvent(e, listRoster(db, gameId)));
+
+  it('残り時間を直せる。内容と順番は変わらず、空にも戻せる', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    const a = addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE' });
+    addEvent(db, { gameId: game.id, period: 1, side: 'B', rosterId: id('B', '10'), type: 'FG3_MADE' });
+    setEventClock(db, a.id, 392);
+    expect(texts(db, game.id)).toEqual(['A #4 2P○ 6:32', 'B #10 3P○']);
+    const fixed = replaceEvent(db, active(db, game.id)[0].id, { clockSeconds: null });
+    expect(fixed.clockSeconds).toBeNull();
+    expect(() => setEventClock(db, fixed.id, 601)).toThrow(/残り時間/);
+    expect(computeScore(listEvents(db, game.id))).toEqual({ A: 2, B: 3 });
+  });
+
+  it('交代の時間は、同時に記録した出入りをまとめて直し、1回の交代のまま取り消せる', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    substitute(db, { gameId: game.id, period: 1, side: 'A', onCourt: ['4', '5', '6', '7'].map((n) => id('A', n)), clockSeconds: null });
+    substitute(db, { gameId: game.id, period: 1, side: 'A', onCourt: ['4', '5', '6', '8'].map((n) => id('A', n)), clockSeconds: null });
+    const out = active(db, game.id).find((e) => e.type === 'SUB_OUT')!;
+    setEventClock(db, out.id, 300);
+    const subs = active(db, game.id).filter((e) => e.createdAt === active(db, game.id).at(-1)!.createdAt);
+    expect(subs.map((e) => [e.type, e.clockSeconds])).toEqual([
+      ['SUB_OUT', 300],
+      ['SUB_IN', 300],
+    ]);
+    // 先の交代（4人が入った記録）は直さない
+    expect(active(db, game.id).filter((e) => e.clockSeconds === null)).toHaveLength(4);
+    undoLastEvent(db, game.id, 1);
+    expect([...onCourtIds(listEvents(db, game.id), listRoster(db, game.id), 'A')]).toHaveLength(4);
+  });
+
+  it('付け忘れた記録を途中に入れると、その位置に並び、ランニングスコアもその順になる', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    const first = addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE' });
+    const second = addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '5'), type: 'FG3_MADE' });
+    insertEvent(db, { gameId: game.id, side: 'B', rosterId: id('B', '10'), type: 'FG2_MADE', clockSeconds: 500 }, { eventId: first.id, place: 'after' });
+    insertEvent(db, { gameId: game.id, side: 'B', rosterId: id('B', '11'), type: 'FOUL', foulKind: 'P', ftAwarded: 0 }, { eventId: first.id, place: 'before' });
+    insertEvent(db, { gameId: game.id, side: 'A', rosterId: null, type: 'TOV' }, { eventId: second.id, place: 'after' });
+    expect(texts(db, game.id)).toEqual(['B #11 F(P)', 'A #4 2P○', 'B #10 2P○ 8:20', 'A #5 3P○', 'A チーム TOV']);
+    expect(active(db, game.id).every((e) => e.period === 1)).toBe(true);
+    expect(computeScore(listEvents(db, game.id))).toEqual({ A: 5, B: 2 });
+  });
+
+  it('Q終了の直後に入れると次のQ、直前に入れるとそのQの記録になる', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE' });
+    endPeriod(db, game.id, 1);
+    const end = active(db, game.id).find((e) => e.type === 'PERIOD_END')!;
+    const shot = { gameId: game.id, side: 'B' as const, rosterId: id('B', '10'), type: 'FG2_MADE' as const };
+    expect(insertEvent(db, shot, { eventId: end.id, place: 'before' }).period).toBe(1);
+    // 次のQがまだ始まっていない間は、Q終了より後ろには入れられない
+    expect(() => insertEvent(db, shot, { eventId: end.id, place: 'after' })).toThrow(/まだ始まっていない/);
+    confirmPeriod(db, game.id, 1);
+    expect(insertEvent(db, shot, { eventId: end.id, place: 'after' }).period).toBe(2);
+    expect(active(db, game.id).map((e) => `${e.period}${e.type}`)).toEqual(['1FG2_MADE', '1FG2_MADE', '1PERIOD_END', '2FG2_MADE']);
+  });
+
+  it('修正表から足した記録（同じ order_key）の間にも入れられる', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    const base = addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE' });
+    adjustStat(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '5'), type: 'FG2_MADE', delta: 1 });
+    const added = active(db, game.id)[1];
+    if (added.createdAt - base.createdAt >= 2) {
+      insertEvent(db, { gameId: game.id, side: 'B', rosterId: id('B', '10'), type: 'FG2_MADE' }, { eventId: base.id, place: 'after' });
+      expect(texts(db, game.id)).toEqual(['A #4 2P○', 'B #10 2P○', 'A #5 2P○']);
+    } else {
+      expect(() =>
+        insertEvent(db, { gameId: game.id, side: 'B', rosterId: id('B', '10'), type: 'FG2_MADE' }, { eventId: base.id, place: 'after' }),
+      ).toThrow(/ここには追加できません/);
+    }
+  });
+
+  it('タイムアウトと交代は途中に入れられず、まだ始まっていないQにも入れられない', () => {
+    const { db } = openTestDb();
+    const { game, id } = setupGame(db);
+    const first = addEvent(db, { gameId: game.id, period: 1, side: 'A', rosterId: id('A', '4'), type: 'FG2_MADE' });
+    expect(() =>
+      insertEvent(db, { gameId: game.id, side: 'A', rosterId: null, type: 'TIMEOUT' }, { eventId: first.id, place: 'after' }),
+    ).toThrow(/途中には追加できません/);
+    expect(() =>
+      insertEvent(db, { gameId: game.id, side: 'A', rosterId: null, type: 'FG2_MADE' }, { eventId: first.id, place: 'after' }),
+    ).toThrow(/選手を選んで/);
   });
 });

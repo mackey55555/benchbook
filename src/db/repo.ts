@@ -855,7 +855,7 @@ export function voidEvent(db: Db, eventId: string): void {
 export function replaceEvent(
   db: Db,
   eventId: string,
-  patch: Partial<Pick<NewEvent, 'side' | 'rosterId' | 'type' | 'foulKind' | 'ftAwarded' | 'period'>>,
+  patch: Partial<Pick<NewEvent, 'side' | 'rosterId' | 'type' | 'foulKind' | 'ftAwarded' | 'period' | 'clockSeconds'>>,
 ): GameEvent {
   return db.transaction((tx) => {
     const original = tx.select().from(gameEvents).where(eq(gameEvents.id, eventId)).get();
@@ -869,7 +869,9 @@ export function replaceEvent(
       type: patch.type ?? original.type,
       foulKind: patch.foulKind !== undefined ? patch.foulKind : original.foulKind,
       ftAwarded: patch.ftAwarded !== undefined ? patch.ftAwarded : original.ftAwarded,
+      clockSeconds: patch.clockSeconds !== undefined ? patch.clockSeconds : original.clockSeconds,
     };
+    checkClock(tx, merged.gameId, merged.period, merged.clockSeconds ?? null);
     const now = Date.now();
     const event: GameEvent = {
       id: ulid(),
@@ -880,12 +882,124 @@ export function replaceEvent(
       rosterId: merged.rosterId,
       type: merged.type,
       ...normalizeEvent(merged),
-      clockSeconds: original.clockSeconds,
+      clockSeconds: merged.clockSeconds ?? null,
       createdAt: now,
       voidedAt: null,
       replacesEventId: original.id,
     };
     tx.update(gameEvents).set({ voidedAt: now }).where(eq(gameEvents.id, original.id)).run();
+    tx.insert(gameEvents).values(event).run();
+    return event;
+  });
+}
+
+/** 残り時間が、そのピリオドの長さに収まっているかを確かめる */
+function checkClock(db: Db, gameId: string, period: number, clockSeconds: number | null): void {
+  if (clockSeconds === null) return;
+  const game = db.select().from(games).where(eq(games.id, gameId)).get();
+  if (!game) throw new RepoError('試合が見つかりません');
+  if (!Number.isInteger(clockSeconds) || clockSeconds < 0 || clockSeconds > periodSeconds(period, game)) {
+    throw new RepoError('残り時間が正しくありません');
+  }
+}
+
+/**
+ * 記録の残り時間だけを直す（null で「時刻なし」に戻す）。元の記録をvoidし、同じ order_key で入れ直す。
+ * 交代は、同時に記録した出入り（同じ createdAt）をまとめて直し、1回の交代のまま保つ。
+ */
+export function setEventClock(db: Db, eventId: string, clockSeconds: number | null): void {
+  db.transaction((tx) => {
+    const original = tx.select().from(gameEvents).where(eq(gameEvents.id, eventId)).get();
+    if (!original) throw new RepoError('イベントが見つかりません');
+    if (original.voidedAt !== null) throw new RepoError('取消済みのイベントは修正できません');
+    checkClock(tx, original.gameId, original.period, clockSeconds);
+    const isSub = original.type === 'SUB_IN' || original.type === 'SUB_OUT';
+    const targets = isSub
+      ? tx
+          .select()
+          .from(gameEvents)
+          .where(
+            and(
+              eq(gameEvents.gameId, original.gameId),
+              eq(gameEvents.createdAt, original.createdAt),
+              inArray(gameEvents.type, ['SUB_IN', 'SUB_OUT']),
+              isNull(gameEvents.voidedAt),
+            ),
+          )
+          .all()
+          .filter((e) => e.side === original.side)
+      : [original];
+    const now = Date.now();
+    for (const e of targets) {
+      tx.update(gameEvents).set({ voidedAt: now }).where(eq(gameEvents.id, e.id)).run();
+      tx.insert(gameEvents)
+        .values({ ...e, id: ulid(), clockSeconds, createdAt: now, voidedAt: null, replacesEventId: e.id })
+        .run();
+    }
+  });
+}
+
+/** 記録を途中に入れる場所。ある記録の直後か、直前 */
+export interface InsertPosition {
+  eventId: string;
+  place: 'after' | 'before';
+}
+
+/** 途中に入れた記録が属するピリオド。Q終了の直後に入れたら、次のピリオドになる */
+export function insertPeriod(anchor: Pick<GameEvent, 'type' | 'period'>, place: InsertPosition['place']): number {
+  return place === 'after' && anchor.type === 'PERIOD_END' ? anchor.period + 1 : anchor.period;
+}
+
+/**
+ * 記録を途中に入れる（付け忘れた記録を、あとから正しい順番の位置に足す）。
+ * 前後の記録の order_key の間の値を採番するので、ほかの記録は動かさない。
+ * タイムアウトと交代は入れられない（残り数やコート上の5人の検証が、順番に依存するため）。
+ */
+export function insertEvent(db: Db, input: Omit<NewEvent, 'period'>, at: InsertPosition): GameEvent {
+  if (input.type === 'TIMEOUT' || input.type === 'SUB_IN' || input.type === 'SUB_OUT' || input.side === null) {
+    throw new RepoError('この記録は、途中には追加できません');
+  }
+  return db.transaction((tx) => {
+    const events = listEvents(tx, input.gameId).filter((e) => e.voidedAt === null);
+    const index = events.findIndex((e) => e.id === at.eventId);
+    if (index < 0) throw new RepoError('追加する場所の記録が見つかりません');
+    const anchor = events[index];
+    const prev = at.place === 'after' ? anchor : events[index - 1];
+    const next = at.place === 'after' ? events[index + 1] : anchor;
+    const period = insertPeriod(anchor, at.place);
+    const game = tx.select().from(games).where(eq(games.id, input.gameId)).get();
+    if (!game) throw new RepoError('試合が見つかりません');
+    if (!next && period > game.currentPeriod) throw new RepoError('まだ始まっていないピリオドには追加できません');
+    const full: NewEvent = { ...input, period };
+    const attrs = normalizeEvent(full);
+    checkClock(tx, input.gameId, period, input.clockSeconds ?? null);
+
+    // 並びは order_key → createdAt の順。前後の order_key が同じとき（修正表から足した記録）は、createdAt で間に入れる
+    let orderKey: number;
+    let createdAt = Date.now();
+    if (prev && next && prev.orderKey === next.orderKey) {
+      orderKey = prev.orderKey;
+      createdAt = Math.floor((prev.createdAt + next.createdAt) / 2);
+      if (createdAt <= prev.createdAt) throw new RepoError('ここには追加できません。1つ前か後ろの場所を選んでください');
+    } else if (prev && next) {
+      orderKey = (prev.orderKey + next.orderKey) / 2;
+    } else {
+      orderKey = prev ? prev.orderKey + 1 : next!.orderKey - 1;
+    }
+    const event: GameEvent = {
+      id: ulid(),
+      gameId: input.gameId,
+      orderKey,
+      period,
+      side: input.side,
+      rosterId: input.rosterId,
+      type: input.type,
+      ...attrs,
+      clockSeconds: input.clockSeconds ?? null,
+      createdAt,
+      voidedAt: null,
+      replacesEventId: null,
+    };
     tx.insert(gameEvents).values(event).run();
     return event;
   });

@@ -1,10 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
-import { TEAM_EVENT_TYPES, replaceEvent, voidEvent, type GameBundle } from '@/db/repo';
+import {
+  TEAM_EVENT_TYPES,
+  addEvent,
+  insertEvent,
+  insertPeriod,
+  replaceEvent,
+  setEventClock,
+  voidEvent,
+  type GameBundle,
+  type InsertPosition,
+} from '@/db/repo';
+import { clockDigitsLabel, parseClockDigits, periodSeconds } from '@/domain/lineup';
 import { activeEvents, compareNumbers, periodLabel } from '@/domain/rules';
 import { EVENT_LABELS, describeEvent } from '@/domain/stats';
 import {
@@ -48,10 +59,29 @@ interface Draft {
   type: EventType;
   foulKind: FoulKind;
   ftAwarded: number;
+  /** 残り時間のテンキー入力（"632" → 6:32、空は時刻なし） */
+  clock: string;
 }
 
 /**
- * 全ログシート。選手・種類の修正（void＋同じ order_key で再挿入）と削除（void）ができる。
+ * 編集シートの用途。
+ * - edit：記録の内容と残り時間を直す
+ * - time：残り時間だけを直す（タイムアウト・交代）
+ * - insert：付け忘れた記録を、選んだ場所に足す（at が null のときは末尾に足す）
+ */
+type Target =
+  | { kind: 'edit'; event: GameEvent }
+  | { kind: 'time'; event: GameEvent }
+  | { kind: 'insert'; at: InsertPosition | null; period: number };
+
+const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '⌫'];
+const isSub = (e: GameEvent) => e.type === 'SUB_IN' || e.type === 'SUB_OUT';
+const clockDigits = (seconds: number | null) =>
+  seconds === null ? '' : `${Math.floor(seconds / 60)}${String(seconds % 60).padStart(2, '0')}`.replace(/^0+(?=\d)/, '');
+
+/**
+ * 全ログシート。選手・種類・残り時間の修正（void＋同じ order_key で再挿入）、削除（void）、
+ * 付け忘れた記録の途中への追加ができる。
  * period を渡すと、そのQのイベントだけに絞り込んで開く。
  */
 export function EventLogSheet(props: {
@@ -63,8 +93,10 @@ export function EventLogSheet(props: {
 }) {
   const { visible, bundle, period, onClose, onChanged } = props;
   const [filter, setFilter] = useState<number | 'all'>(period ?? 'all');
-  const [editing, setEditing] = useState<GameEvent | null>(null);
+  const [target, setTarget] = useState<Target | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** 追加する場所を選んでいる */
+  const [placing, setPlacing] = useState(false);
 
   // 開くたびに絞り込みと編集状態を初期化する
   const [wasVisible, setWasVisible] = useState(visible);
@@ -72,7 +104,8 @@ export function EventLogSheet(props: {
     setWasVisible(visible);
     if (visible) {
       setFilter(period ?? 'all');
-      setEditing(null);
+      setTarget(null);
+      setPlacing(false);
     }
   }
 
@@ -88,31 +121,47 @@ export function EventLogSheet(props: {
     return Array.from({ length: max }, (_, i) => i + 1);
   }, [bundle]);
 
-  const startEdit = (e: GameEvent) => {
-    setEditing(e);
+  const startEdit = (e: GameEvent, kind: 'edit' | 'time') => {
+    setTarget({ kind, event: e });
     setDraft({
       side: e.side ?? 'A',
       rosterId: e.rosterId,
       type: e.type,
       foulKind: e.foulKind ?? 'P',
       ftAwarded: e.ftAwarded ?? 0,
+      clock: clockDigits(e.clockSeconds),
     });
   };
 
+  const startInsert = (at: InsertPosition | null, insertInto: number) => {
+    setPlacing(false);
+    setTarget({ kind: 'insert', at, period: insertInto });
+    setDraft({ side: 'A', rosterId: undefined, type: 'FG2_MADE', foulKind: 'P', ftAwarded: 0, clock: '' });
+  };
+
+  const targetPeriod = target ? (target.kind === 'insert' ? target.period : target.event.period) : 1;
+  const clockSeconds = draft ? parseClockDigits(draft.clock, periodSeconds(targetPeriod, bundle.game)) : null;
+
   const save = () => {
-    if (!editing || !draft || draft.rosterId === undefined) return;
+    if (!target || !draft || clockSeconds === undefined) return;
+    if (target.kind !== 'time' && draft.rosterId === undefined) return;
     const { rosterId } = draft;
-    const ok = attempt(() =>
-      replaceEvent(db, editing.id, {
-        side: draft.side,
-        rosterId,
-        type: draft.type,
-        foulKind: draft.type === 'FOUL' ? draft.foulKind : null,
-        ftAwarded: draft.type === 'FOUL' ? draft.ftAwarded : null,
-      }),
-    );
+    const content = {
+      side: draft.side,
+      rosterId: rosterId ?? null,
+      type: draft.type,
+      foulKind: draft.type === 'FOUL' ? draft.foulKind : null,
+      ftAwarded: draft.type === 'FOUL' ? draft.ftAwarded : null,
+      clockSeconds,
+    };
+    const ok = attempt(() => {
+      if (target.kind === 'time') setEventClock(db, target.event.id, clockSeconds);
+      else if (target.kind === 'edit') replaceEvent(db, target.event.id, content);
+      else if (target.at) insertEvent(db, { gameId: bundle.game.id, ...content }, target.at);
+      else addEvent(db, { gameId: bundle.game.id, period: target.period, ...content });
+    });
     onChanged();
-    if (ok) setEditing(null);
+    if (ok) setTarget(null);
   };
 
   const remove = (e: GameEvent) =>
@@ -129,7 +178,8 @@ export function EventLogSheet(props: {
     ]);
 
   const editor = () => {
-    if (!editing || !draft) return null;
+    if (!target || !draft) return null;
+    const full = target.kind !== 'time';
     const isBench = draft.rosterId === null;
     const kinds: readonly FoulKind[] = isBench ? BENCH_FOUL_KINDS : PLAYER_FOUL_KINDS;
     const players = bundle.roster
@@ -153,8 +203,12 @@ export function EventLogSheet(props: {
     return (
       <ScrollView contentContainerStyle={styles.editor}>
         <Text style={styles.editTitle}>
-          修正：{periodLabel(editing.period)}　{describeEvent(editing, bundle.roster)}
+          {target.kind === 'insert'
+            ? `追加：${periodLabel(target.period)} の記録`
+            : `${full ? '修正' : '時間の修正'}：${periodLabel(target.event.period)}　${describeEvent(target.event, bundle.roster)}`}
         </Text>
+        {full && (
+          <>
         <SectionTitle>チーム</SectionTitle>
         <Segmented
           options={[
@@ -221,9 +275,42 @@ export function EventLogSheet(props: {
             </View>
           </>
         )}
+          </>
+        )}
+        <SectionTitle>残り時間（任意）</SectionTitle>
+        <Row style={styles.clockRow}>
+          <Text num style={[styles.clock, clockSeconds === undefined && { color: colors.danger }]}>
+            {clockDigitsLabel(draft.clock)}
+          </Text>
+          <View style={[styles.wrap, styles.flex]}>
+            {KEYPAD.map((k) => (
+              <Pressable
+                key={k}
+                accessibilityRole="button"
+                accessibilityLabel={k === '⌫' ? '1文字消す' : `残り時間 ${k}`}
+                onPress={() => update({ clock: k === '⌫' ? draft.clock.slice(0, -1) : (draft.clock + k).slice(0, 4) })}
+                style={({ pressed }) => [styles.key, pressed && styles.pressed]}
+              >
+                <Text num style={styles.keyText}>{k}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Row>
+        <Text style={[styles.hint, clockSeconds === undefined && { color: colors.danger }]}>
+          {clockSeconds === undefined
+            ? `残り時間が正しくありません（${periodLabel(targetPeriod)} は ${periodSeconds(targetPeriod, bundle.game) / 60}分まで）`
+            : `そのQの残り時間です（例：6分32秒 → 632）。空にすると、時刻なしになります。${
+                target.kind !== 'insert' && isSub(target.event) ? '同時に記録した交代は、まとめて直します。' : ''
+              }時間を直しても、記録の順番は変わりません。`}
+        </Text>
         <Row style={styles.editButtons}>
-          <Button title="キャンセル" variant="secondary" onPress={() => setEditing(null)} style={styles.flex} />
-          <Button title="保存" onPress={save} disabled={draft.rosterId === undefined} style={styles.flex} />
+          <Button title="キャンセル" variant="secondary" onPress={() => setTarget(null)} style={styles.flex} />
+          <Button
+            title={target.kind === 'insert' ? '追加' : '保存'}
+            onPress={save}
+            disabled={(full && draft.rosterId === undefined) || clockSeconds === undefined}
+            style={styles.flex}
+          />
         </Row>
       </ScrollView>
     );
@@ -241,9 +328,17 @@ export function EventLogSheet(props: {
           <Row style={styles.header}>
             <Text style={styles.title}>記録ログ</Text>
             <View style={styles.flex} />
+            {!target && (
+              <Button
+                title={placing ? '追加をやめる' : '記録を追加'}
+                variant={placing ? 'secondary' : 'accent'}
+                small
+                onPress={() => setPlacing((v) => !v)}
+              />
+            )}
             <Button title="閉じる" small onPress={onClose} />
           </Row>
-          {editing ? (
+          {target ? (
             editor()
           ) : (
             <>
@@ -256,8 +351,63 @@ export function EventLogSheet(props: {
                 </Row>
               </ScrollView>
               <ScrollView contentContainerStyle={styles.list}>
-                {events.length === 0 && <Text style={styles.empty}>記録がありません</Text>}
-                {events.map((e) =>
+                {placing && (
+                  <Text style={styles.hint}>
+                    付け忘れた記録を入れる場所を選んでください。上が新しい記録、下が古い記録です。
+                  </Text>
+                )}
+                {events.length === 0 &&
+                  (placing ? (
+                    slot('empty', () => startInsert(null, filter === 'all' ? bundle.game.currentPeriod : filter))
+                  ) : (
+                    <Text style={styles.empty}>記録がありません</Text>
+                  ))}
+                {events.map((e, i) => (
+                  <View key={e.id} style={styles.entry}>
+                    {slotAfter(e, events[i - 1])}
+                    {row(e)}
+                    {placing &&
+                      i === events.length - 1 &&
+                      slot('first', () => startInsert({ eventId: e.id, place: 'before' }, insertPeriod(e, 'before')))}
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          )}
+        </SafeAreaView>
+        <DialogHost />
+      </SafeAreaProvider>
+    </Modal>
+  );
+
+  function slot(key: string, onPress: () => void) {
+    return (
+      <Pressable
+        key={key}
+        accessibilityRole="button"
+        accessibilityLabel="ここに記録を追加"
+        onPress={onPress}
+        style={({ pressed }) => [styles.slot, pressed && styles.pressed]}
+      >
+        <Ionicons name="add-circle" size={18} color={colors.accentText} />
+        <Text style={styles.slotText}>ここに追加</Text>
+      </Pressable>
+    );
+  }
+
+  /** e の直後（画面では1つ上）に入れる場所。newer は、画面で1つ上にある記録 */
+  function slotAfter(e: GameEvent, newer: GameEvent | undefined) {
+    if (!placing) return null;
+    // 1回の交代の出入りの間には入れない
+    if (newer && isSub(e) && isSub(newer) && e.createdAt === newer.createdAt && e.side === newer.side) return null;
+    const into = insertPeriod(e, 'after');
+    // 最後のピリオドの終了より後ろには入れない
+    if (into > periods.length) return null;
+    return slot('after', () => startInsert({ eventId: e.id, place: 'after' }, into));
+  }
+
+  function row(e: GameEvent) {
+    return (
                   e.type === 'PERIOD_END' ? (
                     <Text key={e.id} style={styles.divider}>
                       ── {periodLabel(e.period)} 終了 ──
@@ -269,15 +419,17 @@ export function EventLogSheet(props: {
                       <Text style={[styles.desc, styles.markText]} numberOfLines={1}>
                         {describeEvent(e, bundle.roster)}
                       </Text>
-                      <Button
-                        title="印を外す"
-                        variant="ghost"
-                        small
-                        onPress={() => {
-                          voidEvent(db, e.id);
-                          onChanged();
-                        }}
-                      />
+                      {!placing && (
+                        <Button
+                          title="印を外す"
+                          variant="ghost"
+                          small
+                          onPress={() => {
+                            voidEvent(db, e.id);
+                            onChanged();
+                          }}
+                        />
+                      )}
                     </Row>
                   ) : (
                     <Row key={e.id} style={styles.item}>
@@ -288,21 +440,20 @@ export function EventLogSheet(props: {
                       >
                         {describeEvent(e, bundle.roster)}
                       </Text>
-                      {e.type !== 'TIMEOUT' && e.type !== 'SUB_IN' && e.type !== 'SUB_OUT' && (
-                        <Button title="修正" variant="secondary" small onPress={() => startEdit(e)} />
+                      {!placing && (
+                        <>
+                          {e.type === 'TIMEOUT' || isSub(e) ? (
+                            <Button title="時間" variant="secondary" small onPress={() => startEdit(e, 'time')} />
+                          ) : (
+                            <Button title="修正" variant="secondary" small onPress={() => startEdit(e, 'edit')} />
+                          )}
+                          <Button title="削除" variant="ghost" small onPress={() => remove(e)} />
+                        </>
                       )}
-                      <Button title="削除" variant="ghost" small onPress={() => remove(e)} />
                     </Row>
-                  ),
-                )}
-              </ScrollView>
-            </>
-          )}
-        </SafeAreaView>
-        <DialogHost />
-      </SafeAreaProvider>
-    </Modal>
-  );
+                  )
+    );
+  }
 }
 
 const styles = StyleSheet.create({
@@ -331,4 +482,33 @@ const styles = StyleSheet.create({
   editTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   editButtons: { marginTop: 12 },
+  entry: { gap: 6 },
+  hint: { fontSize: 12, lineHeight: 18, color: colors.sub },
+  slot: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.accent,
+    backgroundColor: colors.accentBg,
+  },
+  slotText: { fontSize: 14, fontWeight: '800', color: colors.accentText },
+  pressed: { opacity: 0.5 },
+  clockRow: { alignItems: 'center', gap: 12 },
+  clock: { minWidth: 84, textAlign: 'center', fontSize: 30, color: colors.text },
+  key: {
+    width: 44,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  keyText: { fontSize: 20, color: colors.text },
 });
