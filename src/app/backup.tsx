@@ -10,7 +10,7 @@ import { Stack } from 'expo-router';
 import { Button, Card, SectionTitle } from '@/ui/components';
 import { HelpButton } from '@/ui/HelpButton';
 import { Text } from '@/ui/Text';
-import { colors } from '@/ui/theme';
+import { colors, page } from '@/ui/theme';
 import { showDialog } from '@/ui/dialog';
 
 export default function BackupScreen() {
@@ -74,7 +74,7 @@ export default function BackupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 10 },
+  container: { ...page, padding: 16, gap: 10 },
   body: { fontSize: 14, color: colors.text, lineHeight: 20 },
   note: { fontSize: 12, color: colors.sub },
   result: { fontSize: 14, color: colors.ok, lineHeight: 20 },

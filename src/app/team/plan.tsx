@@ -18,7 +18,7 @@ import { awaitSubscription, errorMessage, isSubscribed, useTeamState } from '@/s
 import { Button, Card, SectionTitle, Segmented } from '@/ui/components';
 import { showDialog } from '@/ui/dialog';
 import { Text } from '@/ui/Text';
-import { colors, radius } from '@/ui/theme';
+import { colors, radius, page } from '@/ui/theme';
 
 const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 const PRIVACY_URL = 'https://arti-lab.jp/products/benchbook/privacy';
@@ -226,7 +226,7 @@ export default function PlanScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12, paddingBottom: 40 },
+  container: { ...page, padding: 16, gap: 12, paddingBottom: 40 },
   lead: { fontSize: 17, fontWeight: '800', color: colors.text },
   body: { fontSize: 14, lineHeight: 21, color: colors.text },
   note: { fontSize: 13, lineHeight: 19, color: colors.sub },

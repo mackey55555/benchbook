@@ -1,6 +1,6 @@
 # CLAUDE.md — Benchbook
 
-社会人バスケの公式戦で、マネージャーがベンチ側の控えスコアをiPhoneで記録するアプリ。
+社会人バスケの公式戦で、マネージャーがベンチ側の控えスコアをiPhone（iPadにも対応）で記録するアプリ。
 仕様の正は `docs/SPEC.md`。実装前に必ず該当章を読むこと。仕様と矛盾する判断が必要になったら、実装せずに質問する。
 
 ## 進め方
@@ -13,7 +13,7 @@
 
 - `npm run typecheck` / `npm run lint` / `npm test`
 - スキーマ変更後：`npx drizzle-kit generate --name <名前>`（`drizzle/` に追加。既存のマイグレーションは書き換えない）
-- Androidエミュレータでの動作確認：`BENCHBOOK_ANDROID=1 npx expo run:android`（配布対象はiPhoneのみ）
+- Androidエミュレータでの動作確認：`BENCHBOOK_ANDROID=1 npx expo run:android`（配布対象はiPhone・iPadのみ）
 
 ## アーキテクチャの原則
 

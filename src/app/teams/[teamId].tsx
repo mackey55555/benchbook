@@ -14,7 +14,7 @@ import {
 } from '@/db/repo';
 import { Button, CommitInput, Row, SectionTitle, styles as ui } from '@/ui/components';
 import { Text } from '@/ui/Text';
-import { colors } from '@/ui/theme';
+import { colors, page } from '@/ui/theme';
 import { attempt, useRefresh } from '@/ui/useGame';
 import { showDialog } from '@/ui/dialog';
 
@@ -134,7 +134,7 @@ export default function TeamScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 10, paddingBottom: 60 },
+  container: { ...page, padding: 16, gap: 10, paddingBottom: 60 },
   flex: { flex: 1 },
   number: { width: 60, textAlign: 'center' },
   empty: { color: colors.sub, fontSize: 14 },

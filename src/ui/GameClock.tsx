@@ -7,6 +7,7 @@ import { formatClock, type LineupConfig } from '@/domain/lineup';
 import { periodLabel } from '@/domain/rules';
 
 import { Text } from './Text';
+import { z } from './device';
 import { colors } from './theme';
 
 /**
@@ -58,7 +59,7 @@ export function GameClock(props: {
 
 const styles = StyleSheet.create({
   pill: {
-    height: 38,
+    height: z(38),
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -68,8 +69,8 @@ const styles = StyleSheet.create({
   },
   pillRunning: { backgroundColor: colors.accent },
   pressed: { opacity: 0.6 },
-  period: { fontSize: 13, fontWeight: '800', color: colors.accent },
+  period: { fontSize: z(13), fontWeight: '800', color: colors.accent },
   // 桁が変わっても幅が動かないよう、幅を固定する
-  time: { width: 62, textAlign: 'center', fontSize: 26, lineHeight: 30, color: colors.primaryText },
+  time: { width: z(62), textAlign: 'center', fontSize: z(26), lineHeight: z(30), color: colors.primaryText },
   onAccent: { color: colors.accentText },
 });

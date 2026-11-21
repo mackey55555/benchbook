@@ -5,6 +5,7 @@ import type { TeamState } from '@/domain/stats';
 import type { GameEvent, Side } from '@/domain/types';
 
 import { Text } from './Text';
+import { z } from './device';
 import { colors, sideColor } from './theme';
 
 const CELLS = RULES.foulOutAt;
@@ -119,23 +120,23 @@ export function FoulBoard(props: {
 const styles = StyleSheet.create({
   scroll: { flexGrow: 0 },
   body: { flexDirection: 'row', gap: 14, paddingBottom: 4 },
-  column: { flex: 1, minWidth: 0, gap: 3 },
-  team: { fontSize: 14, fontWeight: '800' },
+  column: { flex: 1, minWidth: z(0), gap: 3 },
+  team: { fontSize: z(14), fontWeight: '800' },
   summary: { flexDirection: 'row', gap: 4, marginBottom: 2 },
   periodBox: {
     flex: 1,
-    height: 40,
+    height: z(40),
     borderRadius: 10,
     backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   periodFuture: { opacity: 0.45 },
-  periodLabel: { fontSize: 10, fontWeight: '700', color: colors.sub },
-  periodCount: { fontSize: 20, lineHeight: 22, color: colors.text },
-  toText: { fontSize: 11, fontWeight: '800', color: colors.text },
+  periodLabel: { fontSize: z(10), fontWeight: '700', color: colors.sub },
+  periodCount: { fontSize: z(20), lineHeight: z(22), color: colors.text },
+  toText: { fontSize: z(11), fontWeight: '800', color: colors.text },
   row: {
-    height: 26,
+    height: z(26),
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -146,13 +147,13 @@ const styles = StyleSheet.create({
   },
   rowWarn: { backgroundColor: colors.warnBg },
   rowOut: { backgroundColor: colors.dangerBg },
-  number: { width: 24, fontSize: 18, lineHeight: 20, textAlign: 'center', color: colors.text },
-  name: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: '700', color: colors.text },
-  benchLabel: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: '700', color: colors.sub },
+  number: { width: z(24), fontSize: z(18), lineHeight: z(20), textAlign: 'center', color: colors.text },
+  name: { flex: 1, minWidth: z(0), fontSize: z(12), fontWeight: '700', color: colors.text },
+  benchLabel: { flex: 1, minWidth: z(0), fontSize: z(12), fontWeight: '700', color: colors.sub },
   cells: { flexDirection: 'row', gap: 2 },
   cell: {
-    width: 26,
-    height: 20,
+    width: z(26),
+    height: z(20),
     borderRadius: 5,
     borderWidth: 1,
     borderColor: colors.line,
@@ -160,5 +161,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cellFilled: { borderColor: colors.disabled, backgroundColor: colors.card },
-  cellText: { fontSize: 11, fontWeight: '800' },
+  cellText: { fontSize: z(11), fontWeight: '800' },
 });

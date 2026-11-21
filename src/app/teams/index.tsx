@@ -6,7 +6,7 @@ import { db } from '@/db/client';
 import { createTeam, ensureOwnTeam, listPlayers, listTeams } from '@/db/repo';
 import { Button, Row, SectionTitle, styles as ui } from '@/ui/components';
 import { Text } from '@/ui/Text';
-import { colors } from '@/ui/theme';
+import { colors, page } from '@/ui/theme';
 import { attempt, useRefresh } from '@/ui/useGame';
 
 export default function TeamsScreen() {
@@ -62,7 +62,7 @@ export default function TeamsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 10 },
+  container: { ...page, padding: 16, gap: 10 },
   flex: { flex: 1 },
   row: {
     flexDirection: 'row',

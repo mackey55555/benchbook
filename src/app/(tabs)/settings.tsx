@@ -13,7 +13,7 @@ import { teamEnabled } from '@/sync/client';
 import { applyUpdate, canCheckUpdate, checkForUpdate, useUpdateState } from '@/ui/appUpdate';
 import { Button, Card, SectionTitle } from '@/ui/components';
 import { Text } from '@/ui/Text';
-import { colors, radius } from '@/ui/theme';
+import { colors, radius, page } from '@/ui/theme';
 import { useRefresh } from '@/ui/useGame';
 
 const LINKS = [
@@ -120,7 +120,7 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, gap: 14, paddingBottom: 32 },
+  container: { ...page, padding: 20, gap: 14, paddingBottom: 32 },
   flex: { flex: 1, minWidth: 0 },
   pressed: { opacity: 0.6 },
   title: { fontSize: 26, fontWeight: '800', color: colors.text },

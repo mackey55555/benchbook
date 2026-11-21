@@ -35,7 +35,7 @@ import type { Side } from '@/domain/types';
 import { Button, Card, Chip, CommitInput, Row, SectionTitle, Segmented, styles as ui } from '@/ui/components';
 import { HelpButton } from '@/ui/HelpButton';
 import { Text } from '@/ui/Text';
-import { colors, sideColor } from '@/ui/theme';
+import { colors, sideColor, page } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 import { DialogHost, showDialog } from '@/ui/dialog';
 
@@ -447,7 +447,7 @@ export default function PrepScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  container: { padding: 16, gap: 10, paddingBottom: 80 },
+  container: { ...page, padding: 16, gap: 10, paddingBottom: 80 },
   label: { width: 64, fontSize: 14, color: colors.sub },
   unit: { fontSize: 14, color: colors.sub, marginRight: 8 },
   number: { width: 56, textAlign: 'center' },

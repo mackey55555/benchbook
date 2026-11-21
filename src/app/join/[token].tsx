@@ -7,7 +7,7 @@ import { acceptInvite, errorMessage, useTeamState } from '@/sync/session';
 import { Button, Card } from '@/ui/components';
 import { showDialog } from '@/ui/dialog';
 import { Text } from '@/ui/Text';
-import { colors } from '@/ui/theme';
+import { colors, page } from '@/ui/theme';
 
 /** 招待のリンク（benchbook://join/コード）を開いたときの画面 */
 export default function JoinScreen() {
@@ -53,7 +53,7 @@ export default function JoinScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12 },
+  container: { ...page, flex: 1, padding: 16, gap: 12 },
   lead: { fontSize: 17, fontWeight: '800', color: colors.text },
   body: { fontSize: 14, lineHeight: 21, color: colors.text },
 });

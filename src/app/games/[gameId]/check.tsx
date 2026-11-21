@@ -18,6 +18,7 @@ import {
 } from '@/domain/rules';
 import type { Side } from '@/domain/types';
 import { Button } from '@/ui/components';
+import { z } from '@/ui/device';
 import { buildRunningScoreHtml } from '@/output/runningScoreHtml';
 import { EventLogSheet } from '@/ui/EventLogSheet';
 import { QuickFixSheet } from '@/ui/QuickFixSheet';
@@ -172,10 +173,10 @@ export default function CheckScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  title: { textAlign: 'center', fontSize: 16, fontWeight: '700', color: colors.text, paddingVertical: 8 },
+  title: { textAlign: 'center', fontSize: z(16), fontWeight: '700', color: colors.text, paddingVertical: 8 },
   practice: {
     textAlign: 'center',
-    fontSize: 13,
+    fontSize: z(13),
     fontWeight: '800',
     color: colors.accentText,
     backgroundColor: colors.accent,
@@ -196,14 +197,14 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,
   },
-  team: { fontSize: 17, fontWeight: '800' },
-  score: { fontSize: 96, lineHeight: 98, fontFamily: fonts.num },
-  sub: { fontSize: 14, color: colors.sub },
+  team: { fontSize: z(17), fontWeight: '800' },
+  score: { fontSize: z(96), lineHeight: z(98), fontFamily: fonts.num },
+  sub: { fontSize: z(14), color: colors.sub },
   stats: { flexDirection: 'row', gap: 20, marginTop: 8 },
   stat: { alignItems: 'center' },
-  statLabel: { fontSize: 12, color: colors.sub },
-  statValue: { fontSize: 40, lineHeight: 42, fontFamily: fonts.num, color: colors.text },
-  actions: { width: 190, justifyContent: 'center', gap: 8 },
+  statLabel: { fontSize: z(12), color: colors.sub },
+  statValue: { fontSize: z(40), lineHeight: z(42), fontFamily: fonts.num, color: colors.text },
+  actions: { width: z(190), justifyContent: 'center', gap: 8 },
   match: { minHeight: 64 },
   sheet: { borderRadius: 12, overflow: 'hidden', backgroundColor: colors.card },
   webview: { flex: 1, backgroundColor: colors.card },

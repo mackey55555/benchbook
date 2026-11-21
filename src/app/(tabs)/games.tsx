@@ -15,7 +15,7 @@ import {
 import { Button, Chip, Row, styles as ui } from '@/ui/components';
 import { GameRow } from '@/ui/GameRow';
 import { Text } from '@/ui/Text';
-import { colors } from '@/ui/theme';
+import { colors, page } from '@/ui/theme';
 import { useRefresh } from '@/ui/useGame';
 
 /** 一度に出す件数。最下部の「さらに読み込む」で同じ数ずつ増やす */
@@ -111,7 +111,7 @@ export default function GamesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, gap: 10, paddingBottom: 32 },
+  container: { ...page, padding: 20, gap: 10, paddingBottom: 32 },
   head: { gap: 10 },
   title: { fontSize: 26, fontWeight: '800', color: colors.text },
   label: { width: 34, fontSize: 12, fontWeight: '700', color: colors.sub },

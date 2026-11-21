@@ -20,7 +20,7 @@ import { EventLogSheet } from '@/ui/EventLogSheet';
 import { HelpButton } from '@/ui/HelpButton';
 import { QuickFixSheet } from '@/ui/QuickFixSheet';
 import { Text } from '@/ui/Text';
-import { colors, fonts, sideColor } from '@/ui/theme';
+import { WIDE_PAGE_WIDTH, colors, fonts, page, sideColor } from '@/ui/theme';
 import { attempt, useGame } from '@/ui/useGame';
 import { useSendToTeam } from '@/ui/useSendToTeam';
 import { showDialog } from '@/ui/dialog';
@@ -112,7 +112,7 @@ export default function GameDetailScreen() {
 
   // A4のシート（HTML）を表示し、PDF・画像で共有する。ランニングスコアとボックススコアで共用
   const sheet = (sheetHtml: string, name: string, withJson: boolean) => {
-    const sheetWidth = width - 24;
+    const sheetWidth = Math.min(width, WIDE_PAGE_WIDTH) - 24;
     return (
       <>
         <Row>
@@ -405,7 +405,7 @@ export default function GameDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 12, gap: 10, paddingBottom: 60 },
+  container: { ...page, maxWidth: WIDE_PAGE_WIDTH, padding: 12, gap: 10, paddingBottom: 60 },
   header: { alignItems: 'center', gap: 6 },
   meta: { fontSize: 12, color: colors.sub },
   scoreRow: { gap: 10 },

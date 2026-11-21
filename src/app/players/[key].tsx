@@ -19,7 +19,7 @@ import { Button, Card, Chip, Row, SectionTitle, Segmented } from '@/ui/component
 import { ShareSheet } from '@/ui/ShareSheet';
 import { StatTable } from '@/ui/StatTable';
 import { Text } from '@/ui/Text';
-import { colors, radius } from '@/ui/theme';
+import { colors, radius, page } from '@/ui/theme';
 import { useAnalysis, useAnalysisLimit } from '@/ui/useAnalysis';
 
 /** 推移グラフに出す試合数（新しいほうから） */
@@ -254,7 +254,7 @@ export default function PlayerScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, gap: 12, paddingBottom: 40 },
+  container: { ...page, padding: 20, gap: 12, paddingBottom: 40 },
   flex: { flex: 1, minWidth: 0 },
   empty: { color: colors.sub, fontSize: 14, paddingVertical: 12 },
   label: { width: 34, fontSize: 12, fontWeight: '700', color: colors.sub },

@@ -24,7 +24,9 @@ const config: ExpoConfig = {
   userInterfaceStyle: 'light',
   ios: {
     bundleIdentifier: 'jp.arti-lab.benchbook',
-    supportsTablet: false,
+    supportsTablet: true,
+    // iPadでも、試合中の入力画面を横向きに固定する。分割表示（Split View）では向きを固定できないため、全画面で動かす
+    requireFullScreen: true,
     // チームプランのサインイン（Appleでサインイン）
     usesAppleSignIn: true,
     // チームへの招待リンク（https://arti-lab.jp/products/benchbook/join/…）を、アプリで直接開く

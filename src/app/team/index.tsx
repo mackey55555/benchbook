@@ -23,7 +23,7 @@ import {
 import { Button, Card, CommitInput, Row, SectionTitle, styles as ui } from '@/ui/components';
 import { showDialog } from '@/ui/dialog';
 import { Text } from '@/ui/Text';
-import { colors, radius } from '@/ui/theme';
+import { colors, radius, page } from '@/ui/theme';
 
 /** チームプランの入口。サインイン、チームの一覧、チームを作る・招待で入る */
 export default function TeamPlanScreen() {
@@ -382,7 +382,7 @@ function PlanCard() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12, paddingBottom: 40 },
+  container: { ...page, padding: 16, gap: 12, paddingBottom: 40 },
   flex: { flex: 1, minWidth: 0 },
   pressed: { opacity: 0.6 },
   lead: { fontSize: 17, fontWeight: '800', color: colors.text },
